@@ -1,0 +1,26 @@
+---
+# Builds system_inventory_record, one dict per host, from the facts and checks.
+
+- name: Reset filesystem list
+  ansible.builtin.set_fact:
+    __system_inventory_filesystems: []
+
+- name: Build filesystem list
+  ansible.builtin.set_fact:
+    __system_inventory_filesystems: >-
+      {{ __system_inventory_filesystems + [{
+           'mount': item.mount,
+           'device': item.device,
+           'fstype': item.fstype,
+           'size_gb': (item.size_total / 1073741824) | round(1),
+           'free_gb': (item.size_available / 1073741824) | round(1),
+           'used_pct': ((1 - item.size_available / item.size_total) * 100) | round(1)
+                       if item.size_total > 0 else 0
+         }] }}
+  loop: "{{ ansible_facts.mounts | rejectattr('fstype', 'in', system_inventory_exclude_fstypes) | list }}"
+  loop_control:
+    label: "{{ item.mount }}"
+
+- name: Build inventory record
+  ansible.builtin.set_fact:
+    system_inventory_record: "{{ lookup('ansible.builtin.template', 'record.json.j2') | from_json }}"

@@ -1,0 +1,40 @@
+# GPUStack release, see https://github.com/gpustack/gpustack/releases. Changing
+# it on an installed host upgrades GPUStack: the container is recreated from
+# the new image and migrates its database when it starts.
+gpustack_version: "2.3.1"
+gpustack_image: "docker.io/gpustack/gpustack:v{{ gpustack_version }}"
+
+# Unprivileged user that owns and runs the container. The role creates it. The
+# image and the data volume live under its home, in ~/.local/share/containers.
+gpustack_user: gpustack
+
+# Host port for the UI and API, which workers also register against. The
+# container always listens on 80. A port below 1024 makes the role lower
+# net.ipv4.ip_unprivileged_port_start to it, for every user on the host.
+gpustack_port: 8080
+
+# Open gpustack_port in firewalld when firewalld is running. A rootless
+# container's ports are ordinary listening sockets, so firewalld filters them.
+gpustack_firewall_enabled: true
+
+# Password of the admin user, read when GPUStack first creates it. Empty:
+# GPUStack generates one, see the README for how to read it. Keep it out of git.
+gpustack_bootstrap_password: ""
+
+# URL workers and users reach the server at, e.g. http://gpustack.example.com:8080.
+# GPUStack only accepts requests for this host name once it is set, so leave it
+# empty unless every client uses the same name.
+gpustack_server_external_url: ""
+
+# Extra environment variables for the container: any `gpustack start` flag as
+# GPUSTACK_<FLAG>, see https://docs.gpustack.ai/latest/cli-reference/start/.
+# e.g. {GPUSTACK_DISABLE_UPDATE_CHECK: "true"}
+gpustack_env: {}
+
+# Extra Quadlet PublishPort= and Volume= values, e.g. for HTTPS:
+#   gpustack_extra_ports: ["8443:443"]
+#   gpustack_extra_volumes: ["/home/gpustack/tls:/tls:ro,Z"]
+#   gpustack_env: {GPUSTACK_SSL_CERTFILE: /tls/server.crt, GPUSTACK_SSL_KEYFILE: /tls/server.key}
+# The role does not open extra ports in firewalld.
+gpustack_extra_ports: []
+gpustack_extra_volumes: []

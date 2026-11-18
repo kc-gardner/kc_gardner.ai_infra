@@ -1,0 +1,23 @@
+---
+# Directory on the controller where the reports are written. Defaults to
+# reports/system_inventory under the directory you run ansible-playbook from.
+# inventory.json (full detail) and inventory.csv (one row per host) land here.
+system_inventory_report_dir: "{{ lookup('ansible.builtin.env', 'PWD') }}/reports/system_inventory"
+
+# Count pending package updates (dnf repoquery --upgrades).
+# Reads repo metadata, so it is the slowest check; turn off for a fast run.
+system_inventory_check_updates: true
+
+# Count installed packages (package_facts).
+system_inventory_collect_packages: true
+
+# Filesystem types left out of the filesystem list.
+system_inventory_exclude_fstypes:
+  - tmpfs
+  - devtmpfs
+  - squashfs
+  - overlay
+  - iso9660
+
+# Seconds allowed for fact gathering per host.
+system_inventory_gather_timeout: 30

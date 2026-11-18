@@ -1,0 +1,4 @@
+- name: Restore SELinux contexts on storage pools
+  ansible.builtin.command: restorecon -R {{ item.path | quote }}
+  loop: "{{ kvm_host_storage_pools }}"
+  changed_when: true

@@ -1,0 +1,38 @@
+- name: Deploy KVM guests
+  hosts: kvm_hosts
+  become: true
+  gather_facts: false
+
+  # The first file found is loaded: the real, git-ignored one if present.
+  vars_files:
+    - [vars/rhsm.yaml, vars/rhsm.example.yaml]
+
+  vars:
+    # Reads your public key from the machine running Ansible. In AAP there is
+    # no such file: pass kvm_guest_ssh_authorized_keys as an extra variable.
+    kvm_guest_ssh_authorized_keys:
+      - "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'HOME') ~ '/.ssh/id_ed25519.pub') }}"
+    # RHEL KVM guest images downloaded from https://access.redhat.com/downloads.
+    # Only needed for VMs with os: rhel or rhel9. These are copied from the
+    # machine running Ansible; see the README for AAP.
+    kvm_guest_rhel_image_src: "{{ playbook_dir }}/rhel-10-x86_64-kvm.qcow2"
+    kvm_guest_rhel9_image_src: "{{ playbook_dir }}/rhel-9-x86_64-kvm.qcow2"
+    kvm_guests:
+      - name: gpustack
+        os: rhel9
+        vcpus: 4
+        memory_mb: 8192
+        disk_gb: 80
+        network: host-bridge
+      - name: netbox01
+        os: fedora
+        vcpus: 2
+        memory_mb: 4096
+        disk_gb: 40
+        network: host-bridge
+      - name: old-vm
+        os: ubuntu
+        state: absent   # destroys the VM and deletes its disk
+
+  roles:
+    - kc_gardner.ai_infra.kvm_guest

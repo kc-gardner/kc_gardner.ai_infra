@@ -1,0 +1,20 @@
+- name: Ensure the host is Ubuntu
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Ubuntu'
+    fail_msg: >-
+      ubuntu_updates supports Ubuntu, found
+      {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}
+
+- name: Ensure the settings are valid
+  ansible.builtin.assert:
+    that:
+      - ubuntu_updates_type in ['all', 'security']
+      - ubuntu_updates_upgrade in ['dist', 'safe']
+      - ubuntu_updates_mail_report in ['on-change', 'only-on-error', 'always']
+      - ubuntu_updates_unattended_origins | length > 0
+    fail_msg: >-
+      ubuntu_updates_type must be all or security (got {{ ubuntu_updates_type }}),
+      ubuntu_updates_upgrade dist or safe (got {{ ubuntu_updates_upgrade }}),
+      ubuntu_updates_mail_report on-change, only-on-error or always (got {{ ubuntu_updates_mail_report }}),
+      and ubuntu_updates_unattended_origins must not be empty

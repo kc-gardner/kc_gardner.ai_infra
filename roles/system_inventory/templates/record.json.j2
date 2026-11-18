@@ -1,0 +1,73 @@
+{#- Builds one host's inventory record. Rendered as JSON, parsed back with from_json. -#}
+{%- set f = ansible_facts -%}
+{%- set cpu_model = f.processor | default([])
+      | reject('match', '^[0-9]+$')
+      | reject('in', ['GenuineIntel', 'AuthenticAMD'])
+      | first | default('unknown') -%}
+
+{%- set fw = __system_inventory_firewalld | default({}) -%}
+{%- set upd = __system_inventory_updates | default({}) -%}
+{%- set rb = __system_inventory_reboot | default({}) -%}
+{%- set failed = __system_inventory_failed_units | default({}) -%}
+
+{%- if upd.skipped | default(false) or upd.rc is not defined -%}
+  {%- set updates = 'not checked' -%}
+{%- elif upd.rc == 0 -%}
+  {%- set updates = upd.stdout_lines | reject('equalto', '') | unique | list | length -%}
+{%- else -%}
+  {%- set updates = 'unknown' -%}
+{%- endif -%}
+
+{%- if rb.rc is not defined -%}
+  {%- set reboot = 'unknown' -%}
+{%- elif rb.rc == 0 -%}
+  {%- set reboot = false -%}
+{%- elif rb.rc == 1 and 'reboot' in rb.stdout | lower -%}
+  {%- set reboot = true -%}
+{%- else -%}
+  {%- set reboot = 'unknown' -%}
+{%- endif -%}
+
+{{ {
+  'hostname': inventory_hostname,
+  'fqdn': f.fqdn,
+  'collected_at': f.date_time.iso8601,
+  'os': {
+    'distribution': f.distribution,
+    'version': f.distribution_version,
+    'kernel': f.kernel,
+    'arch': f.architecture,
+    'timezone': f.date_time.tz,
+  },
+  'hardware': {
+    'vendor': f.system_vendor | default('unknown'),
+    'product': f.product_name | default('unknown'),
+    'serial': f.product_serial | default('unknown'),
+    'bios_version': f.bios_version | default('unknown'),
+    'virtualization_role': f.virtualization_role | default('unknown'),
+    'virtualization_type': f.virtualization_type | default('unknown'),
+  },
+  'cpu': {
+    'model': cpu_model,
+    'sockets': f.processor_count | default(0),
+    'cores_per_socket': f.processor_cores | default(0),
+    'vcpus': f.processor_vcpus | default(0),
+  },
+  'memory_mb': f.memtotal_mb | default(0),
+  'swap_mb': f.swaptotal_mb | default(0),
+  'network': {
+    'default_ipv4': f.default_ipv4.address | default(''),
+    'default_interface': f.default_ipv4.interface | default(''),
+    'mac': f.default_ipv4.macaddress | default(''),
+    'all_ipv4': f.all_ipv4_addresses | default([]),
+  },
+  'filesystems': __system_inventory_filesystems,
+  'uptime_days': (f.uptime_seconds / 86400) | round(1),
+  'last_boot': '%Y-%m-%dT%H:%M:%SZ' | strftime(f.date_time.epoch | int - f.uptime_seconds, utc=true),
+  'selinux': f.selinux.mode | default(f.selinux.status | default('unknown')),
+  'firewalld': fw.stdout | default('n/a', true),
+  'failed_units': failed.stdout_lines | default([]) | map('split') | map('first') | list,
+  'packages_installed': (f.packages.values() | map('length') | sum) if f.packages is defined else none,
+  'updates_pending': updates,
+  'reboot_required': reboot,
+} | to_json }}

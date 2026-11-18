@@ -1,0 +1,10 @@
+- name: Update Ubuntu systems
+  hosts: ubuntu
+  become: true
+
+  vars:
+    ubuntu_updates_reboot: true
+    ubuntu_updates_reboot_timeout: 600
+
+  roles:
+    - kc_gardner.ai_infra.ubuntu_updates

@@ -1,0 +1,25 @@
+- name: Install unattended-upgrades
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present
+    lock_timeout: "{{ ubuntu_updates_lock_timeout }}"
+
+# Turns the apt-daily timers' package list refresh and unattended-upgrade run on or off.
+# This is the file dpkg-reconfigure unattended-upgrades writes.
+- name: Configure automatic updates
+  ansible.builtin.template:
+    src: 20auto-upgrades.j2
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+
+# Loaded after the package's own 50unattended-upgrades, which is left untouched,
+# and replaces its origin and blacklist lists rather than adding to them.
+- name: Configure unattended-upgrade
+  ansible.builtin.template:
+    src: 52ansible-unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/52ansible-unattended-upgrades
+    owner: root
+    group: root
+    mode: "0644"

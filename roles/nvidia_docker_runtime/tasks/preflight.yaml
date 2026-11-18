@@ -1,0 +1,32 @@
+- name: Check the settings
+  ansible.builtin.assert:
+    that:
+      - nvidia_docker_runtime_state in ['present', 'absent']
+      - nvidia_docker_runtime_default is boolean
+      - nvidia_docker_runtime_name is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+      - nvidia_docker_runtime_path | length > 0
+      - nvidia_docker_runtime_daemon_json is match('^/')
+    fail_msg: >-
+      nvidia_docker_runtime_state must be present or absent, nvidia_docker_runtime_default true or false,
+      nvidia_docker_runtime_name a runtime name, nvidia_docker_runtime_path set, and
+      nvidia_docker_runtime_daemon_json an absolute path.
+    quiet: true
+
+- name: Check Docker is available
+  ansible.builtin.command: docker version --format '{{ "{{" }}.Server.Version{{ "}}" }}'
+  changed_when: false
+  check_mode: false
+
+- name: Check the NVIDIA Container Toolkit is installed
+  ansible.builtin.command: nvidia-ctk --version
+  changed_when: false
+  check_mode: false
+  when: nvidia_docker_runtime_state == 'present'
+
+# Docker accepts a runtime whose binary is missing and only fails when a
+# container asks for it, so check here instead.
+- name: Check the runtime binary is on the PATH
+  ansible.builtin.command: which {{ nvidia_docker_runtime_path | quote }}
+  changed_when: false
+  check_mode: false
+  when: nvidia_docker_runtime_state == 'present'

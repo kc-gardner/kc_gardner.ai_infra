@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+[Unit]
+Description=NetBox PostgreSQL database
+
+[Container]
+ContainerName=netbox-postgres
+Image={{ netbox_postgres_image }}
+Network=netbox.network
+EnvironmentFile={{ netbox_config_dir }}/postgres.env
+Volume=netbox-postgres.volume:/var/lib/postgresql
+HealthCmd=pg_isready -q -t 2 -d {{ netbox_db_name }} -U {{ netbox_db_user }}
+HealthInterval=10s
+HealthTimeout=30s
+HealthRetries=5
+HealthStartPeriod=20s
+# The service counts as started once the database accepts connections.
+Notify=healthy
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

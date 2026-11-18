@@ -1,0 +1,50 @@
+# Skipped in check mode: nothing was reloaded, so Docker still shows the old list.
+- name: List Docker's runtimes
+  ansible.builtin.command: docker info --format '{{ "{{" }}json .Runtimes{{ "}}" }}'
+  register: nvidia_docker_runtime_info
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Ensure Docker has picked up the change
+  ansible.builtin.assert:
+    that:
+      - (nvidia_docker_runtime_name in nvidia_docker_runtime_loaded) == (nvidia_docker_runtime_state == 'present')
+    fail_msg: >-
+      {{ nvidia_docker_runtime_daemon_json }} is updated but Docker's runtimes are still
+      {{ nvidia_docker_runtime_loaded | join(', ') }} after a reload. Restart Docker
+      (systemctl restart docker) when a break is acceptable: with live-restore off,
+      that stops and restarts the running containers.
+    quiet: true
+  vars:
+    nvidia_docker_runtime_loaded: "{{ (nvidia_docker_runtime_info.stdout | from_json).keys() | list }}"
+  when: not ansible_check_mode
+
+# NVIDIA_VISIBLE_DEVICES asks the runtime for the GPUs; it also mounts nvidia-smi into the container.
+- name: Run nvidia-smi through the runtime
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --runtime
+      - "{{ nvidia_docker_runtime_name }}"
+      - -e
+      - NVIDIA_VISIBLE_DEVICES=all
+      - --entrypoint
+      - nvidia-smi
+      - "{{ nvidia_docker_runtime_test_image }}"
+      - -L
+  register: nvidia_docker_runtime_test
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - nvidia_docker_runtime_state == 'present'
+    - nvidia_docker_runtime_test_image | length > 0
+
+- name: Report
+  ansible.builtin.debug:
+    msg: >-
+      Docker runtimes: {{ (nvidia_docker_runtime_info.stdout | from_json).keys() | join(', ') }}.
+      {{ ('GPUs seen through ' ~ nvidia_docker_runtime_name ~ ': ' ~ nvidia_docker_runtime_test.stdout_lines | join('; '))
+         if nvidia_docker_runtime_test.stdout_lines is defined else '' }}
+  when: not ansible_check_mode

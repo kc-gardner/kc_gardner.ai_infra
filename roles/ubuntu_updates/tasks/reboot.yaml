@@ -1,0 +1,29 @@
+# Ubuntu's equivalent of needs-restarting -r: packages that need a reboot create
+# /var/run/reboot-required and list themselves in reboot-required.pkgs.
+- name: Check whether a reboot is required
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: ubuntu_updates_reboot_required
+
+- name: Read the packages that require a reboot
+  ansible.builtin.command: cat /var/run/reboot-required.pkgs
+  register: ubuntu_updates_reboot_pkgs
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: ubuntu_updates_reboot_required.stat.exists
+
+- name: Report the pending reboot
+  ansible.builtin.debug:
+    msg: >-
+      Reboot required by: {{ ubuntu_updates_reboot_pkgs.stdout_lines | default([]) | unique | join(', ') | default('unknown', true) }}.
+      {{ 'Rebooting now.' if ubuntu_updates_reboot | bool else 'Set ubuntu_updates_reboot: true to reboot automatically.' }}
+  when: ubuntu_updates_reboot_required.stat.exists
+
+- name: Reboot
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ ubuntu_updates_reboot_timeout }}"
+    msg: Rebooting to apply updates (Ansible ubuntu_updates)
+  when:
+    - ubuntu_updates_reboot_required.stat.exists
+    - ubuntu_updates_reboot | bool

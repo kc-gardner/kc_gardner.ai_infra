@@ -1,0 +1,68 @@
+# {{ ansible_managed }}
+# vLLM instance {{ vllm_server.name }}: {{ vllm_server.model }} as {{ vllm_server.served_name }}
+{% set args = ['vllm', 'serve', '/models/' ~ vllm_server.model,
+               '--served-model-name', vllm_server.served_name,
+               '--host', '0.0.0.0',
+               '--gpu-memory-utilization', vllm_server.gpu_memory_utilization | string,
+               '--max-model-len', vllm_server.max_model_len | string,
+               '--max-num-seqs', vllm_server.max_num_seqs | string] %}
+{% if vllm_server.reasoning_parser %}
+{%   set args = args + ['--reasoning-parser', vllm_server.reasoning_parser] %}
+{% endif %}
+{% if vllm_server.tool_call_parser %}
+{%   set args = args + ['--enable-auto-tool-choice', '--tool-call-parser', vllm_server.tool_call_parser] %}
+{% endif %}
+{% set args = args + (['--enable-prefix-caching'] if vllm_server.prefix_caching | bool else ['--no-enable-prefix-caching']) %}
+{% if vllm_server.language_model_only | bool %}
+{%   set args = args + ['--language-model-only'] %}
+{% endif %}
+{% set args = args + vllm_server.extra_args | map('string') | list %}
+name: {{ vllm_server.name }}
+
+services:
+  vllm:
+    image: {{ vllm_server.image }}
+    container_name: {{ vllm_server.name }}
+    # The upstream image's entrypoint is `vllm serve`; the command below spells it out,
+    # so clear it. Same as `--entrypoint ""` in NVIDIA's DGX Spark scripts.
+    entrypoint: []
+    restart: unless-stopped
+    # NVIDIA's recommended settings for PyTorch containers: shared memory from
+    # the host and no limit on locked memory.
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "{{ vllm_server.port }}:8000"
+{% if vllm_server.env %}
+    environment: {{ vllm_server.env | to_json }}
+{% endif %}
+    volumes:
+      - {{ vllm_server_models_dir }}:/models:ro
+      # Compiled kernels, kept so a recreated container does not build them again.
+      - {{ vllm_server_cache_dir }}/vllm:/root/.cache/vllm
+      - {{ vllm_server_cache_dir }}/flashinfer:/root/.cache/flashinfer
+      - {{ vllm_server_cache_dir }}/triton:/root/.triton
+{% for volume in vllm_server.extra_volumes %}
+      - {{ volume }}
+{% endfor %}
+{% if vllm_server.security_opt %}
+    security_opt: {{ vllm_server.security_opt | to_json }}
+{% endif %}
+    command: {{ args | to_json }}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # Loading the model takes minutes; failures during this time do not count.
+      start_period: {{ vllm_server_start_timeout }}s
+      start_interval: 10s

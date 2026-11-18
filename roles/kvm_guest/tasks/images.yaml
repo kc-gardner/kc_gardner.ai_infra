@@ -1,0 +1,22 @@
+# Base images are downloaded once and shared: each VM disk is a qcow2 overlay
+# on top of one. They are not re-downloaded if the file already exists, so
+# delete the file (with no VMs using it) to pick up a newer image.
+# Owner is not set: libvirt changes it to qemu when a VM starts, and resetting
+# it would report a change on every run after a new VM.
+- name: Download base images
+  ansible.builtin.get_url:
+    url: "{{ kvm_guest_catalog[item].image_url }}"
+    dest: "{{ kvm_guest_base_images[item] }}"
+    checksum: "{{ kvm_guest_catalog[item].checksum | default(omit, true) }}"
+    mode: "0644"
+  loop: "{{ kvm_guest_used_os }}"
+  when: kvm_guest_catalog[item].image_url | default('') | length > 0
+
+- name: Copy base images from the controller
+  ansible.builtin.copy:
+    src: "{{ kvm_guest_catalog[item].image_src }}"
+    dest: "{{ kvm_guest_base_images[item] }}"
+    mode: "0644"
+    force: false
+  loop: "{{ kvm_guest_used_os }}"
+  when: kvm_guest_catalog[item].image_url | default('') | length == 0

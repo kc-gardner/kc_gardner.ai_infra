@@ -1,0 +1,52 @@
+# Open WebUI release to run. Pin a release rather than :main, which is the
+# development branch: https://github.com/open-webui/open-webui/releases
+open_webui_image: ghcr.io/open-webui/open-webui:v0.11.4
+
+# Compose project and container name.
+open_webui_name: open-webui
+# Host port for the web interface.
+open_webui_port: 3000
+
+# Docker volume holding the database (users, chats, settings), uploads and the
+# document index. Created if missing; an existing one is reused as is.
+open_webui_volume: open-webui
+
+# Where compose.yaml and the environment file go.
+open_webui_compose_dir: /opt/open-webui
+
+# Signs login sessions. Required: without it Open WebUI makes one inside the
+# container, and everyone is logged out whenever the container is recreated.
+# Keep it in Ansible Vault; `openssl rand -hex 32` makes a good one.
+open_webui_secret_key: ""
+
+# OpenAI-compatible APIs to offer, such as vllm_server instances. The container
+# reaches the host as host.docker.internal. Example:
+#
+# open_webui_openai_connections:
+#   - url: http://host.docker.internal:8000/v1
+#   - url: http://host.docker.internal:8001/v1
+#     key: "{{ vault_vllm_api_key }}"   # only if vLLM runs with --api-key
+#
+# Like the settings below, these only take effect on a new install: see the README.
+open_webui_openai_connections: []
+
+# Open WebUI looks for Ollama by default. Off, since this host serves models with vLLM.
+open_webui_enable_ollama: false
+
+# Any other environment variables, e.g. {WEBUI_NAME: "Hallucinator"}.
+# See https://docs.openwebui.com/getting-started/env-configuration
+open_webui_env: {}
+
+# Copy the database before the container is recreated (new image or settings).
+open_webui_backup: true
+open_webui_backup_dir: /opt/open-webui/backups
+# Number of backups to keep.
+open_webui_backup_keep: 5
+
+# Seconds to wait for Open WebUI to start and report healthy.
+open_webui_start_timeout: 600
+
+# A container using open_webui_volume that this role did not create (e.g. one
+# started with docker run) blocks the deploy: two copies of Open WebUI must not
+# share a database. Set true to remove it instead. Its data stays in the volume.
+open_webui_replace_unmanaged: false

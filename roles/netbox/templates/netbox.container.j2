@@ -1,0 +1,31 @@
+# {{ ansible_managed }}
+[Unit]
+Description=NetBox
+Requires=netbox-postgres.service netbox-valkey.service
+After=netbox-postgres.service netbox-valkey.service
+
+[Container]
+ContainerName=netbox
+Image={{ netbox_image }}
+Network=netbox.network
+EnvironmentFile={{ netbox_config_dir }}/netbox.env
+Volume={{ netbox_config_dir }}/zz_role.py:/etc/netbox/config/zz_role.py:ro,z
+Volume=netbox-media.volume:/opt/netbox/netbox/media
+Volume=netbox-reports.volume:/opt/netbox/netbox/reports
+Volume=netbox-scripts.volume:/opt/netbox/netbox/scripts
+HealthCmd=/opt/netbox/health.sh
+HealthInterval=15s
+HealthTimeout=3s
+HealthRetries=3
+HealthStartPeriod=10m
+# The container migrates the database before it serves anything. The service
+# counts as started once the login page answers, so the worker and nginx,
+# which start after it, never see a half-migrated database.
+Notify=healthy
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

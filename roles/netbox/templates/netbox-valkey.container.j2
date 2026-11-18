@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+[Unit]
+Description=NetBox Valkey task queue and cache
+
+[Container]
+ContainerName=netbox-valkey
+Image={{ netbox_valkey_image }}
+Network=netbox.network
+# No password: Valkey is only reachable on the netbox container network.
+Exec=valkey-server --appendonly yes
+Volume=netbox-valkey.volume:/data
+HealthCmd=valkey-cli ping
+HealthInterval=10s
+HealthTimeout=3s
+HealthRetries=5
+HealthStartPeriod=5s
+Notify=healthy
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

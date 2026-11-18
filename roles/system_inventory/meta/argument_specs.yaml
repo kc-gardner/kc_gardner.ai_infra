@@ -1,0 +1,30 @@
+---
+argument_specs:
+  main:
+    short_description: Collect hardware, OS and health data and write JSON/CSV reports
+    description:
+      - Gathers facts plus a few health checks (failed units, firewalld, pending updates,
+        reboot required) on each host.
+      - Writes inventory.json and inventory.csv for all hosts in the play to the controller.
+    options:
+      system_inventory_report_dir:
+        type: path
+        description: Controller directory the reports are written to.
+        default: "{{ lookup('ansible.builtin.env', 'PWD') }}/reports/system_inventory"
+      system_inventory_check_updates:
+        type: bool
+        description: Count pending package updates. Reads repo metadata, so it is the slowest check.
+        default: true
+      system_inventory_collect_packages:
+        type: bool
+        description: Count installed packages.
+        default: true
+      system_inventory_exclude_fstypes:
+        type: list
+        elements: str
+        description: Filesystem types left out of the filesystem list.
+        default: [tmpfs, devtmpfs, squashfs, overlay, iso9660]
+      system_inventory_gather_timeout:
+        type: int
+        description: Seconds allowed for fact gathering per host.
+        default: 30

@@ -1,0 +1,28 @@
+# {{ ansible_managed }}
+[Unit]
+Description=GPUStack server
+
+[Container]
+ContainerName=gpustack
+Image={{ gpustack_image }}
+EnvironmentFile={{ gpustack_env_file }}
+PublishPort={{ gpustack_port | int }}:80
+{% for port in gpustack_extra_ports %}
+PublishPort={{ port }}
+{% endfor %}
+# Z gives the data a label private to this container, and relabels it for each
+# new container, which gets a new SELinux category.
+Volume=gpustack-data.volume:/var/lib/gpustack:Z
+{% for volume in gpustack_extra_volumes %}
+Volume={{ volume }}
+{% endfor %}
+# The image's entrypoint wants 65535 open files and warns below that.
+PodmanArgs=--ulimit nofile=65535:65535
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=900
+TimeoutStopSec=120
+
+[Install]
+WantedBy=default.target

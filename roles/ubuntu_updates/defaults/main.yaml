@@ -1,0 +1,48 @@
+# Which updates to install on this run:
+#   all       every available update, like dnf update
+#   security  only updates from ubuntu_updates_unattended_origins (the -security
+#             pocket by default), like dnf update --security
+ubuntu_updates_type: all
+
+# How ubuntu_updates_type: all upgrades:
+#   dist  apt full-upgrade: installs new dependencies and removes conflicting
+#         packages as needed, so new kernels come in. Closest to dnf update.
+#   safe  apt upgrade: never removes anything, so some updates may be held back.
+ubuntu_updates_upgrade: dist
+
+# Remove packages that are no longer needed (old kernels, orphaned dependencies).
+ubuntu_updates_autoremove: true
+
+# Skip apt update if the package lists are newer than this many seconds.
+ubuntu_updates_cache_valid_time: 3600
+# How long to wait for another apt or dpkg run (e.g. the apt-daily timers) to finish.
+ubuntu_updates_lock_timeout: 300
+
+# Reboot when /var/run/reboot-required exists after updating. Off by default:
+# the role reports that a reboot is needed and leaves it to you.
+ubuntu_updates_reboot: false
+ubuntu_updates_reboot_timeout: 600
+
+# Origins unattended-upgrade may install from. Used by ubuntu_updates_type: security
+# and by the automatic runs. The ESM entries only match on hosts attached to Ubuntu Pro.
+# Add "${distro_id}:${distro_codename}-updates" to take bug-fix updates too.
+ubuntu_updates_unattended_origins:
+  - "${distro_id}:${distro_codename}-security"
+  - "${distro_id}ESMApps:${distro_codename}-apps-security"
+  - "${distro_id}ESM:${distro_codename}-infra-security"
+
+# Packages unattended-upgrade must never touch (regular expressions), e.g. ['^linux-'].
+# ubuntu_updates_type: all ignores this; hold a package with apt-mark hold to exclude it there.
+ubuntu_updates_unattended_blacklist: []
+
+# Automatic updates through the apt-daily timers and unattended-upgrades,
+# the equivalent of dnf-automatic. Ubuntu Server turns these on by default.
+ubuntu_updates_automatic: true
+# Let the automatic runs reboot the host when an update needs it, at this time.
+ubuntu_updates_automatic_reboot: false
+ubuntu_updates_automatic_reboot_time: "02:00"
+
+# Mail a report from the automatic runs to this address. Needs a working MTA on the host.
+ubuntu_updates_mail: ""
+# on-change, only-on-error or always.
+ubuntu_updates_mail_report: on-change

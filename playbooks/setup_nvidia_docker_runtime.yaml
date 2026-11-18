@@ -1,0 +1,8 @@
+- name: Register the NVIDIA runtime with Docker
+  hosts: gpu_hosts
+  become: true
+
+  # GPUStack's worker runs with --runtime nvidia. DGX OS only sets up CDI,
+  # which the vLLM and Open WebUI containers use; that keeps working.
+  roles:
+    - kc_gardner.ai_infra.nvidia_docker_runtime

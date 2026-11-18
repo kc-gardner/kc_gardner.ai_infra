@@ -1,0 +1,17 @@
+# Template for vars/netbox.yaml, which setup_netbox.yaml loads when present.
+# Copy this file to vars/netbox.yaml (ignored by git) and fill it in.
+
+# Each at least 50 characters. `openssl rand -base64 48` makes one.
+# Changing the secret key logs everyone out; changing the pepper invalidates
+# every v2 API token.
+netbox_secret_key: ""
+netbox_api_token_pepper: ""
+
+# Password of the local PostgreSQL role. `openssl rand -hex 24` makes one.
+netbox_db_password: ""
+
+# First superuser, created only if it does not exist. Leave the password empty
+# to create no user.
+netbox_superuser_name: admin
+netbox_superuser_email: ""
+netbox_superuser_password: ""

@@ -1,0 +1,52 @@
+- name: Ensure the host is Fedora or RHEL 9 or 10
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'RedHat'
+      - ansible_facts.distribution == 'Fedora' or ansible_facts.distribution_major_version in ['9', '10']
+    fail_msg: >-
+      netbox supports Fedora and RHEL 9 and 10, found
+      {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}
+    quiet: true
+
+- name: Ensure the host has at least 2 GB of memory
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.memtotal_mb | int >= 1800
+    fail_msg: >-
+      NetBox with PostgreSQL and Valkey on one host needs at least 2 GB of memory,
+      found {{ ansible_facts.memtotal_mb }} MB
+    quiet: true
+
+# The secrets go in environment files, which hold one value per line.
+- name: Ensure the required secrets are set
+  ansible.builtin.assert:
+    that:
+      - netbox_secret_key | length >= 50
+      - netbox_api_token_pepper | length >= 50
+      - netbox_db_password | length > 0
+      - "'\n' not in netbox_secret_key ~ netbox_api_token_pepper ~ netbox_db_password ~ netbox_superuser_password"
+    fail_msg: >-
+      Set netbox_secret_key and netbox_api_token_pepper (each at least 50 characters)
+      and netbox_db_password, each on one line. See playbooks/vars/netbox.example.yaml.
+    quiet: true
+
+- name: Ensure the TLS certificate and key are given together
+  ansible.builtin.assert:
+    that:
+      - (netbox_tls_cert_file | length > 0) == (netbox_tls_key_file | length > 0)
+    fail_msg: Set both netbox_tls_cert_file and netbox_tls_key_file, or neither for a self-signed certificate
+    quiet: true
+
+- name: Ensure NetBox has at least one server name
+  ansible.builtin.assert:
+    that:
+      - netbox_server_names_clean | length > 0
+    fail_msg: netbox_server_names is empty
+    quiet: true
+
+- name: Warn when no superuser will be created
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: netbox_superuser_password is empty, so no superuser is created. Create one with
+      'sudo podman exec -it netbox /opt/netbox/netbox/manage.py createsuperuser'.
+  when: netbox_superuser_password | length == 0

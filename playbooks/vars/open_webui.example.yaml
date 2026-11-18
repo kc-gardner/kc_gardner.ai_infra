@@ -1,0 +1,5 @@
+# Template for vars/open_webui.yaml, which setup_open_webui.yaml loads when present.
+# Copy this file to vars/open_webui.yaml (ignored by git) and set the key that
+# signs Open WebUI login sessions. `openssl rand -hex 32` makes one.
+# Changing it logs everyone out.
+open_webui_secret_key: ""

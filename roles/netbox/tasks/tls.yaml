@@ -1,0 +1,57 @@
+- name: Create the TLS directory
+  ansible.builtin.file:
+    path: "{{ netbox_tls_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Copy the provided certificate and key
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {src: "{{ netbox_tls_cert_file }}", dest: "{{ netbox_tls_cert }}", mode: "0644"}
+    - {src: "{{ netbox_tls_key_file }}", dest: "{{ netbox_tls_key }}", mode: "0600"}
+  loop_control:
+    label: "{{ item.dest }}"
+  register: netbox_tls_copied
+  when: not netbox_tls_selfsigned | bool
+
+- name: Create a self-signed certificate
+  when: netbox_tls_selfsigned | bool
+  block:
+    - name: Create the private key
+      community.crypto.openssl_privatekey:
+        path: "{{ netbox_tls_key }}"
+        type: RSA
+        size: 3072
+        owner: root
+        group: root
+        mode: "0600"
+      register: netbox_tls_key_made
+
+    - name: Create the certificate signing request
+      community.crypto.openssl_csr_pipe:
+        privatekey_path: "{{ netbox_tls_key }}"
+        common_name: "{{ netbox_server_names_clean[0] }}"
+        subject_alt_name: "{{ netbox_tls_sans }}"
+      register: netbox_tls_csr
+      changed_when: false
+
+    # Remade when the key or the names change.
+    - name: Create the certificate
+      community.crypto.x509_certificate:
+        path: "{{ netbox_tls_cert }}"
+        csr_content: "{{ netbox_tls_csr.csr }}"
+        privatekey_path: "{{ netbox_tls_key }}"
+        provider: selfsigned
+        selfsigned_not_after: "+{{ netbox_tls_selfsigned_days }}d"
+        owner: root
+        group: root
+        mode: "0644"
+      register: netbox_tls_cert_made

@@ -1,0 +1,11 @@
+- name: Start libvirt default NAT network
+  community.libvirt.virt_net:
+    name: default
+    state: active
+  when: kvm_host_default_network | bool
+
+- name: Autostart libvirt default NAT network
+  community.libvirt.virt_net:
+    name: default
+    autostart: true
+  when: kvm_host_default_network | bool

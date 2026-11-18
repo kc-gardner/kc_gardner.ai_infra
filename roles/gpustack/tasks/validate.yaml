@@ -1,0 +1,26 @@
+- name: Check the GPUStack service is running
+  ansible.builtin.command:
+    argv: [systemctl, --user, is-active, gpustack.service]
+  become: true
+  become_user: "{{ gpustack_user }}"
+  environment: "{{ gpustack_user_env }}"
+  changed_when: false
+
+# The container starts PostgreSQL, the gateway and then the server.
+- name: Check GPUStack answers
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ gpustack_port }}/"
+    status_code: 200
+  register: gpustack_ui
+  retries: 60
+  delay: 5
+  until: gpustack_ui.status == 200
+
+- name: Show where GPUStack is
+  ansible.builtin.debug:
+    msg: >-
+      GPUStack {{ gpustack_version }} is up at
+      {{ gpustack_server_external_url | default('http://' ~ ansible_facts.default_ipv4.address ~ ':' ~ gpustack_port, true) }}.
+      Log in as admin{{ '' if gpustack_bootstrap_password | length > 0 else
+      '; the generated password is shown by: sudo -iu ' ~ gpustack_user ~
+      ' podman exec gpustack cat /var/lib/gpustack/initial_admin_password' }}

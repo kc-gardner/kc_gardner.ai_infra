@@ -1,0 +1,9 @@
+---
+- name: Collect facts and health checks
+  ansible.builtin.import_tasks: collect.yaml
+
+- name: Build the inventory record
+  ansible.builtin.import_tasks: record.yaml
+
+- name: Write the reports
+  ansible.builtin.import_tasks: report.yaml

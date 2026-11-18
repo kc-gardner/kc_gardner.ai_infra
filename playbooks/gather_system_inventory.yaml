@@ -1,0 +1,7 @@
+- name: Collect system inventory
+  hosts: "{{ target | default('all') }}"
+  become: true
+  gather_facts: false   # the role gathers the subsets it needs
+
+  roles:
+    - kc_gardner.ai_infra.system_inventory

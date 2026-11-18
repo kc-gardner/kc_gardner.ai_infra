@@ -1,0 +1,7 @@
+# Template for vars/rhsm.yaml, which deploy_kvm_guest.yaml loads when present.
+# Copy this file to vars/rhsm.yaml (ignored by git) and fill in your Red Hat
+# org ID and activation key to register RHEL VMs on first boot. Both are on
+# https://console.redhat.com under Inventory > System Configuration >
+# Activation Keys. Left empty, RHEL VMs boot unregistered.
+kvm_guest_rhsm_org: ""
+kvm_guest_rhsm_activation_key: ""

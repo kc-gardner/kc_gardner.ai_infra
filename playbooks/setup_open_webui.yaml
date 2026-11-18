@@ -1,0 +1,16 @@
+- name: Run Open WebUI
+  hosts: gpu_hosts
+  become: true
+
+  # The first file found is loaded: the real, git-ignored one if present.
+  vars_files:
+    - [vars/open_webui.yaml, vars/open_webui.example.yaml]
+
+  vars:
+    # Only used on a new install; after that, connections are managed in
+    # Admin Settings > Connections.
+    open_webui_openai_connections:
+      - url: http://host.docker.internal:8000/v1
+
+  roles:
+    - kc_gardner.ai_infra.open_webui

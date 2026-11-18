@@ -1,0 +1,22 @@
+- name: Preflight checks
+  ansible.builtin.import_tasks: preflight.yaml
+
+- name: Fetch base images
+  ansible.builtin.import_tasks: images.yaml
+
+- name: Create VMs
+  ansible.builtin.include_tasks: create.yaml
+  loop: "{{ kvm_guest_list | selectattr('state', 'eq', 'present') | rejectattr('name', 'in', kvm_guest_existing_vms) }}"
+  loop_control:
+    loop_var: kvm_guest
+    label: "{{ kvm_guest.name }}"
+
+- name: Remove VMs
+  ansible.builtin.include_tasks: remove.yaml
+  loop: "{{ kvm_guest_list | selectattr('state', 'eq', 'absent') }}"
+  loop_control:
+    loop_var: kvm_guest
+    label: "{{ kvm_guest.name }}"
+
+- name: Start and report VMs
+  ansible.builtin.import_tasks: running.yaml

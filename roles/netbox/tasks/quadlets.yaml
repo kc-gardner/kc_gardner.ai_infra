@@ -1,0 +1,44 @@
+- name: Install the Quadlet units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ netbox_quadlet_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ netbox_quadlets }}"
+  register: netbox_quadlet_files
+
+# The generator skips a unit it cannot parse and only logs why, which shows up
+# later as "unit not found". Run it by hand so a mistake fails here instead.
+- name: Check the Quadlet units
+  ansible.builtin.command: /usr/lib/systemd/system-generators/podman-system-generator --dryrun
+  register: netbox_quadlet_check
+  changed_when: false
+  failed_when: >-
+    netbox_quadlet_check.rc != 0
+    or netbox_quadlet_check.stderr is search('(?i)error|unsupported key')
+  when: not ansible_check_mode
+
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: netbox_quadlet_files is changed
+
+- name: Work out which services need a restart
+  ansible.builtin.set_fact:
+    netbox_restart: >-
+      {{ (
+        (['netbox-postgres'] if 'netbox-postgres.container' in changed else [])
+        + (['netbox-valkey'] if 'netbox-valkey.container' in changed else [])
+        + (['netbox'] if 'netbox.container' in changed
+             or netbox_env_file is changed or netbox_extra_config_file is changed else [])
+        + (['netbox-worker'] if 'netbox-worker.container' in changed
+             or netbox_env_file is changed or netbox_extra_config_file is changed else [])
+        + (['netbox-nginx'] if 'netbox-nginx.container' in changed
+             or netbox_nginx_config_file is changed
+             or netbox_tls_copied is changed
+             or netbox_tls_key_made is changed
+             or netbox_tls_cert_made is changed else [])
+      ) }}
+  vars:
+    changed: "{{ netbox_quadlet_files.results | selectattr('changed') | map(attribute='item') | list }}"

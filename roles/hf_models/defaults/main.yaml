@@ -1,0 +1,46 @@
+# Models to download from Hugging Face. Each entry needs at least `repo`;
+# anything left out comes from hf_models_defaults. Example:
+#
+# hf_models:
+#   - repo: Qwen/Qwen3.6-35B-A3B-FP8
+#   - repo: Qwen/Qwen3.8-27B-FP8
+#     revision: 3f1c2a9...   # pin a commit so reruns never change it
+#   - repo: RedHatAI/Qwen2.5-7B-Instruct-FP8-dynamic
+#     name: qwen2.5-7b       # folder name under hf_models_dir
+#   - repo: some/old-model
+#     state: absent          # deletes the model's folder
+hf_models: []
+
+hf_models_defaults:
+  # A branch, tag or full commit hash. A branch is only downloaded when the
+  # folder is missing (or hf_models_update is true); a commit hash is
+  # downloaded whenever the folder holds a different commit.
+  revision: main
+  state: present
+  # name: defaults to the last part of repo, e.g. Qwen3.6-35B-A3B-FP8
+
+# Where models live on the host. vllm_server mounts this at /models.
+hf_models_dir: /opt/models
+hf_models_dir_owner: root
+# The setgid bit keeps new files in this group.
+hf_models_dir_group: docker
+hf_models_dir_mode: "2775"
+
+# Downloads run `hf download` inside this image, so nothing is installed on the host.
+# The vLLM image already has the huggingface_hub CLI. Keep this the same as the
+# vllm_server image so the host does not hold two large images.
+hf_models_image: vllm/vllm-openai:v0.28.0@sha256:61fc8a896b0a4fbbbdc063bc4b0dbc25ce98e02b5050c24aeb7830ac02039b14
+
+# Hugging Face access token, only needed for gated or private models.
+# Keep it in Ansible Vault.
+hf_models_token: ""
+
+# Rerun `hf download` for every present model that tracks a branch, to pick up
+# new commits. Files that have not changed are not downloaded again.
+hf_models_update: false
+
+# Refuse to start downloading when the models folder has less free space than this.
+hf_models_min_free_gb: 100
+
+# Longest time a single model download may take, in seconds.
+hf_models_download_timeout: 14400

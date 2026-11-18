@@ -1,0 +1,16 @@
+# Runs once per absent instance (vllm_server).
+- name: Check for the compose file of {{ vllm_server.name }}
+  ansible.builtin.stat:
+    path: "{{ vllm_server_compose_dir }}/{{ vllm_server.name }}/compose.yaml"
+  register: vllm_server_compose_file
+
+- name: Stop and remove {{ vllm_server.name }}
+  community.docker.docker_compose_v2:
+    project_src: "{{ vllm_server_compose_dir }}/{{ vllm_server.name }}"
+    state: absent
+  when: vllm_server_compose_file.stat.exists
+
+- name: Remove the compose folder of {{ vllm_server.name }}
+  ansible.builtin.file:
+    path: "{{ vllm_server_compose_dir }}/{{ vllm_server.name }}"
+    state: absent

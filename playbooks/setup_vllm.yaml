@@ -1,0 +1,31 @@
+- name: Download models and run vLLM
+  hosts: gpu_hosts
+  become: true
+
+  vars:
+    hf_models:
+      - repo: nvidia/Qwen3.8-27B-NVFP4
+        revision: 482ca0f3832238542f8f5295dde86b5f22711d80
+
+    # From the vLLM recipe for DGX Spark (GB10):
+    # https://recipes.vllm.ai/Qwen/Qwen3.8-27B?hardware=dgx_spark_gb10&variant=nvfp4_nvidia
+    vllm_server_instances:
+      - name: vllm
+        model: Qwen3.8-27B-NVFP4
+        served_name: qwen3.8
+        port: 8000
+        gpu_memory_utilization: 0.7
+        max_model_len: 262144
+        max_num_seqs: 8
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+        language_model_only: true
+        extra_args:
+          - --kv-cache-dtype
+          - fp8
+          # Split long prompts into chunks so they don't stall other requests.
+          - --enable-chunked-prefill
+
+  roles:
+    - kc_gardner.ai_infra.hf_models
+    - kc_gardner.ai_infra.vllm_server

@@ -1,0 +1,16 @@
+galaxy_info:
+  role_name: system_inventory
+  author: KC
+  description: Collect hardware, OS and health data from hosts and write JSON and CSV reports
+  license: MIT
+  min_ansible_version: "2.17"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+        - "10"
+    - name: Fedora
+      versions:
+        - all
+
+dependencies: []

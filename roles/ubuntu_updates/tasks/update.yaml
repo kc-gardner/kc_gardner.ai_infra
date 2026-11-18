@@ -1,0 +1,50 @@
+- name: Update the package lists
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ ubuntu_updates_cache_valid_time }}"
+    lock_timeout: "{{ ubuntu_updates_lock_timeout }}"
+
+- name: Install all updates
+  ansible.builtin.apt:
+    upgrade: "{{ ubuntu_updates_upgrade }}"
+    lock_timeout: "{{ ubuntu_updates_lock_timeout }}"
+  register: ubuntu_updates_apt
+  when: ubuntu_updates_type == 'all'
+
+# unattended-upgrade only takes packages from the allowed origins, pulls in their
+# dependencies, and skips any that would prompt about a changed config file.
+# It gives up if the apt timers hold the lock, so it is retried.
+- name: Install security updates
+  ansible.builtin.command:
+    argv: "{{ ['unattended-upgrade', '--verbose'] + (['--dry-run'] if ansible_check_mode else []) }}"
+  register: ubuntu_updates_unattended
+  until: ubuntu_updates_unattended.rc == 0
+  retries: "{{ (ubuntu_updates_lock_timeout / 30) | int }}"
+  delay: 30
+  changed_when: "'Packages that will be upgraded:' in ubuntu_updates_unattended_output"
+  check_mode: false
+  vars:
+    ubuntu_updates_unattended_output: "{{ ubuntu_updates_unattended.stdout ~ ubuntu_updates_unattended.stderr }}"
+  when: ubuntu_updates_type == 'security'
+
+- name: Remove packages that are no longer needed
+  ansible.builtin.apt:
+    autoremove: true
+    lock_timeout: "{{ ubuntu_updates_lock_timeout }}"
+  when: ubuntu_updates_autoremove | bool
+
+- name: Show the updated packages
+  vars:
+    # apt-get prints "Inst pkg" in check mode and "Setting up pkg" for real;
+    # unattended-upgrade prints one "Packages that will be upgraded:" line.
+    ubuntu_updates_packages: >-
+      {% if ubuntu_updates_type == 'all' %}
+      {{- ubuntu_updates_apt.stdout | default('') | regex_findall('(?m)^(?:Inst|Setting up) (\S+)') | unique }}
+      {%- else %}
+      {{- ((ubuntu_updates_unattended.stdout ~ ubuntu_updates_unattended.stderr)
+           | regex_findall('Packages that will be upgraded: (.*)') | join(' ')).split() | unique }}
+      {%- endif %}
+  ansible.builtin.debug:
+    msg: >-
+      {{ ubuntu_updates_type }} updates{{ ' (dry run)' if ansible_check_mode else '' }}:
+      {{ ubuntu_updates_packages | join(', ') if ubuntu_updates_packages | length > 0 else 'none available' }}

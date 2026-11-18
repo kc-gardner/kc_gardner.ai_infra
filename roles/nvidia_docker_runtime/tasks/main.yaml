@@ -1,0 +1,8 @@
+- name: Preflight checks
+  ansible.builtin.import_tasks: preflight.yaml
+
+- name: Update daemon.json
+  ansible.builtin.import_tasks: configure.yaml
+
+- name: Check Docker's runtimes
+  ansible.builtin.import_tasks: verify.yaml

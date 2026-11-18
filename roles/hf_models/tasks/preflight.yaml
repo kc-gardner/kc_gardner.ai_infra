@@ -1,0 +1,48 @@
+- name: Start with an empty model list
+  ansible.builtin.set_fact:
+    hf_models_list: []
+
+# name defaults to the last part of repo: Qwen/Qwen3.6-35B-A3B-FP8 -> Qwen3.6-35B-A3B-FP8
+- name: Apply defaults to each model
+  ansible.builtin.set_fact:
+    hf_models_list: "{{ hf_models_list + [hf_models_defaults | combine({'name': item.repo | default('') | basename}, item)] }}"
+  loop: "{{ hf_models }}"
+  loop_control:
+    label: "{{ item.repo | default('(no repo)') }}"
+
+- name: Check model definitions
+  ansible.builtin.assert:
+    that:
+      - item.repo is defined
+      - item.repo is match('^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - item.name is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - item.revision | string | length > 0
+      - item.state in ['present', 'absent']
+    fail_msg: >-
+      Each model needs a repo like Qwen/Qwen3.6-35B-A3B-FP8, a name of letters,
+      digits, dots, hyphens and underscores, a revision, and state present or absent. Got: {{ item }}
+    quiet: true
+  loop: "{{ hf_models_list }}"
+  loop_control:
+    label: "{{ item.repo | default('(no repo)') }}"
+
+- name: Check model folder names are unique
+  ansible.builtin.assert:
+    that:
+      - hf_models_list | map(attribute='name') | unique | length == hf_models_list | length
+    fail_msg: Two hf_models entries use the same folder name; set name on one of them.
+    quiet: true
+
+- name: Check Docker is available
+  ansible.builtin.command: docker version --format '{{ "{{" }}.Server.Version{{ "}}" }}'
+  changed_when: false
+  check_mode: false
+  when: hf_models_list | selectattr('state', 'eq', 'present') | length > 0
+
+- name: Create the models folder
+  ansible.builtin.file:
+    path: "{{ hf_models_dir }}"
+    state: directory
+    owner: "{{ hf_models_dir_owner }}"
+    group: "{{ hf_models_dir_group }}"
+    mode: "{{ hf_models_dir_mode }}"

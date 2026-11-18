@@ -1,0 +1,16 @@
+- name: Enable tuned
+  ansible.builtin.systemd_service:
+    name: tuned
+    enabled: true
+    state: started
+
+- name: Get active tuned profile
+  ansible.builtin.command: tuned-adm active
+  register: kvm_host_tuned_active
+  changed_when: false
+  check_mode: false
+
+- name: Set tuned profile
+  ansible.builtin.command: tuned-adm profile {{ kvm_host_tuned_profile }}
+  when: kvm_host_tuned_profile not in kvm_host_tuned_active.stdout
+  changed_when: true

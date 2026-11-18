@@ -1,0 +1,16 @@
+galaxy_info:
+  role_name: gpustack
+  author: KC
+  description: Run the GPUStack server in a rootless Podman container managed by the user's systemd (Quadlet)
+  license: MIT
+  min_ansible_version: "2.17"
+  platforms:
+    - name: Fedora
+      versions:
+        - all
+    - name: EL
+      versions:
+        - "9"
+        - "10"
+
+dependencies: []

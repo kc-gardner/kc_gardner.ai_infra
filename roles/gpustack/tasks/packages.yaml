@@ -1,0 +1,26 @@
+# acl lets Ansible hand its temporary files to the unprivileged user it
+# becomes. The others are what rootless Podman needs and a minimal install
+# may lack.
+- name: Install Podman
+  ansible.builtin.dnf:
+    name:
+      - podman
+      - shadow-utils
+      - acl
+    state: present
+
+- name: Check the Podman version
+  ansible.builtin.command:
+    argv: [podman, version, --format, "{{ '{{ .Client.Version }}' }}"]
+  register: gpustack_podman_version
+  changed_when: false
+  when: not ansible_check_mode
+
+# Quadlet arrived in Podman 4.4.
+- name: Ensure Podman is 4.4 or later
+  ansible.builtin.assert:
+    that:
+      - gpustack_podman_version.stdout is version('4.4', '>=')
+    fail_msg: "gpustack needs Podman 4.4 or later, found {{ gpustack_podman_version.stdout }}"
+    quiet: true
+  when: not ansible_check_mode

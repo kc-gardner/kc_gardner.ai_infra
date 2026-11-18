@@ -1,0 +1,106 @@
+- name: Read base image size for {{ kvm_guest.name }}
+  ansible.builtin.command: qemu-img info --output=json -U {{ kvm_guest_base_images[kvm_guest.os] | quote }}
+  register: kvm_guest_base_info
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# qemu-img accepts an overlay smaller than its base, but the guest then sees
+# partitions past the end of the disk and cannot find its root filesystem.
+- name: Check disk size for {{ kvm_guest.name }}
+  ansible.builtin.assert:
+    that:
+      - (kvm_guest.disk_gb | int) * 1073741824 >= kvm_guest_base_size | int
+    fail_msg: >-
+      {{ kvm_guest.name }}: disk_gb is {{ kvm_guest.disk_gb }} but the {{ kvm_guest.os }}
+      image needs at least {{ (kvm_guest_base_size | int / 1073741824) | round(0, 'ceil') | int }}.
+    quiet: true
+  vars:
+    kvm_guest_base_size: "{{ (kvm_guest_base_info.stdout | from_json)['virtual-size'] }}"
+  # The base image is missing in check mode, when the download is skipped.
+  when: kvm_guest_base_info.rc == 0
+
+- name: Create cloud-init directory for {{ kvm_guest.name }}
+  ansible.builtin.file:
+    path: "{{ kvm_guest_cloud_init_dir }}/{{ kvm_guest.name }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Write cloud-init files for {{ kvm_guest.name }}
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ kvm_guest_cloud_init_dir }}/{{ kvm_guest.name }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - user-data
+    - meta-data
+
+- name: Write cloud-init network config for {{ kvm_guest.name }}
+  ansible.builtin.template:
+    src: network-config.j2
+    dest: "{{ kvm_guest_cloud_init_dir }}/{{ kvm_guest.name }}/network-config"
+    owner: root
+    group: root
+    mode: "0600"
+  when: kvm_guest.ip is defined
+
+# Without a network-config file cloud-init uses DHCP on the first NIC.
+- name: Remove stale network config for {{ kvm_guest.name }}
+  ansible.builtin.file:
+    path: "{{ kvm_guest_cloud_init_dir }}/{{ kvm_guest.name }}/network-config"
+    state: absent
+  when: kvm_guest.ip is not defined
+
+# A qcow2 overlay backed by the shared base image. cloud-init grows the root
+# filesystem to fill the disk on first boot.
+- name: Create disk for {{ kvm_guest.name }}
+  ansible.builtin.command:
+    argv:
+      - qemu-img
+      - create
+      - -f
+      - qcow2
+      - -F
+      - qcow2
+      - -b
+      - "{{ kvm_guest_base_images[kvm_guest.os] }}"
+      - "{{ kvm_guest_image_dir }}/{{ kvm_guest.name }}.qcow2"
+      - "{{ kvm_guest.disk_gb }}G"
+    creates: "{{ kvm_guest_image_dir }}/{{ kvm_guest.name }}.qcow2"
+
+# virt-install attaches the cloud-init data for the first boot only.
+- name: Create VM {{ kvm_guest.name }}
+  ansible.builtin.command:
+    argv:
+      - virt-install
+      - --connect
+      - qemu:///system
+      - --name
+      - "{{ kvm_guest.name }}"
+      - --osinfo
+      - "{{ kvm_guest.os_variant | default(kvm_guest_catalog[kvm_guest.os].os_variants | select('in', kvm_guest_osinfo_ids) | first | default('linux2024')) }}"
+      - --vcpus
+      - "{{ kvm_guest.vcpus }}"
+      - --memory
+      - "{{ kvm_guest.memory_mb }}"
+      - --disk
+      - path={{ kvm_guest_image_dir }}/{{ kvm_guest.name }}.qcow2,format=qcow2,bus=virtio
+      - --network
+      - network={{ kvm_guest.network }},model=virtio,mac={{ kvm_guest.mac }}
+      - --cloud-init
+      - >-
+        user-data={{ kvm_guest_cloud_init_dir }}/{{ kvm_guest.name }}/user-data,meta-data={{ kvm_guest_cloud_init_dir }}/{{ kvm_guest.name }}/meta-data{{
+        (',network-config=' ~ kvm_guest_cloud_init_dir ~ '/' ~ kvm_guest.name ~ '/network-config') if kvm_guest.ip is defined else '' }}
+      - --boot
+      - uefi
+      - --import
+      - --graphics
+      - none
+      - --console
+      - pty,target_type=serial
+      - --noautoconsole
+  changed_when: true

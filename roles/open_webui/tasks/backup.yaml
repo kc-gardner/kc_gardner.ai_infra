@@ -1,0 +1,60 @@
+# sqlite3's .backup takes a consistent copy even while Open WebUI is running.
+# It runs in the Open WebUI image, which has sqlite3, so the host needs nothing.
+# Only the database is copied; uploads and the document index stay in the volume.
+- name: Create the backup folder
+  ansible.builtin.file:
+    path: "{{ open_webui_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Check the volume holds a database
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --entrypoint
+      - test
+      - -v
+      - "{{ open_webui_volume }}:/data:ro"
+      - "{{ open_webui_image }}"
+      - -f
+      - /data/webui.db
+  register: open_webui_db_check
+  changed_when: false
+  failed_when: open_webui_db_check.rc not in [0, 1]
+  check_mode: false
+
+- name: Back up the database
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --entrypoint
+      - sqlite3
+      - -v
+      - "{{ open_webui_volume }}:/data:ro"
+      - -v
+      - "{{ open_webui_backup_dir }}:/backup"
+      - "{{ open_webui_image }}"
+      - /data/webui.db
+      - .backup /backup/webui-{{ now(fmt='%Y%m%d-%H%M%S') }}.db
+  changed_when: true
+  when: open_webui_db_check.rc == 0
+
+- name: List backups
+  ansible.builtin.find:
+    paths: "{{ open_webui_backup_dir }}"
+    patterns: webui-*.db
+  register: open_webui_backups
+
+- name: Remove old backups
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (open_webui_backups.files | sort(attribute='mtime', reverse=true))[open_webui_backup_keep | int :] }}"
+  loop_control:
+    label: "{{ item.path | basename }}"

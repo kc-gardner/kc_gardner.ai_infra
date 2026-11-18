@@ -1,0 +1,20 @@
+# Pulled here rather than when the services start, so a slow or failed
+# download is not hidden behind a systemd start timeout.
+- name: Check which images are present
+  ansible.builtin.command:
+    argv: [podman, image, exists, "{{ item }}"]
+  loop: "{{ netbox_images | unique }}"
+  register: netbox_images_present
+  changed_when: false
+  failed_when: netbox_images_present.rc not in [0, 1]
+
+- name: Pull the missing images
+  ansible.builtin.command:
+    argv: [podman, pull, --quiet, "{{ item.item }}"]
+  loop: "{{ netbox_images_present.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.rc == 1
+  changed_when: true
+  async: 1800
+  poll: 10

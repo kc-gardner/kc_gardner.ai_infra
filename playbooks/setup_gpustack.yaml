@@ -1,0 +1,7 @@
+- name: Deploy a GPUStack server
+  hosts: gpustack
+  become: true
+  gather_facts: true
+
+  roles:
+    - kc_gardner.ai_infra.gpustack

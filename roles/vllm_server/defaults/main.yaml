@@ -1,0 +1,90 @@
+# vLLM containers to run, each serving one model on its own port. Each entry
+# needs at least name, model and port; anything left out comes from
+# vllm_server_defaults. Example (settings for one large model on a DGX Spark):
+#
+# vllm_server_instances:
+#   - name: vllm
+#     model: Qwen3.6-35B-A3B-FP8     # folder under vllm_server_models_dir
+#     served_name: qwen3.6
+#     port: 8000
+#     gpu_memory_utilization: 0.55
+#     max_model_len: 262144
+#     reasoning_parser: qwen3
+#     tool_call_parser: qwen3_coder
+#     language_model_only: true
+#   - name: old-model
+#     state: absent                  # stops and removes the container
+vllm_server_instances: []
+
+vllm_server_defaults:
+  # Upstream vLLM, as in NVIDIA's DGX Spark vLLM playbook (build.nvidia.com/spark/vllm).
+  # The tag is multi-arch; the digest pins it so a re-pushed tag cannot change what runs.
+  # NVIDIA's NGC build (nvcr.io/nvidia/vllm:<yy.mm>-py3) also works.
+  image: vllm/vllm-openai:v0.28.0@sha256:61fc8a896b0a4fbbbdc063bc4b0dbc25ce98e02b5050c24aeb7830ac02039b14
+  # served_name: the model name clients put in API requests. Defaults to the
+  # instance name. Keep it stable and you can change the model underneath
+  # without changing clients.
+
+  # Share of GPU memory this container claims when it starts: the model weights,
+  # plus a pool that holds each request's context (the KV cache). On the GB10
+  # the GPU and the operating system share one pool of memory, so all instances
+  # together must leave room for the host (see vllm_server_gpu_memory_limit).
+  gpu_memory_utilization: 0.5
+
+  # Longest single request in tokens, prompt and reply together. Larger values
+  # let one request use more of the KV cache pool.
+  max_model_len: 32768
+
+  # How many requests the container works on at the same time; more wait in a
+  # queue. 1-4 suits one person or one agent. vLLM logs "Maximum concurrency
+  # for N tokens per request" at startup, and the role reports it: if that is
+  # below max_num_seqs, long requests will queue.
+  max_num_seqs: 4
+
+  # Reuse the work done for a prompt start that was seen before (a system
+  # prompt, earlier turns of a chat, an agent loop). Nearly free, so on.
+  prefix_caching: true
+
+  # Model-family specific. reasoning_parser splits the model's thinking from its
+  # answer; tool_call_parser turns tool calls into OpenAI-style tool_calls.
+  # Empty leaves them off. See the README for common values.
+  reasoning_parser: ""
+  tool_call_parser: ""
+
+  # Skip a multimodal model's vision encoder to save memory, text only.
+  language_model_only: false
+
+  # Any other `vllm serve` arguments, e.g. ["--api-key", "{{ vault_vllm_key }}"].
+  extra_args: []
+
+  # Environment variables for the container, e.g. {VLLM_USE_RUST_FRONTEND: "1"}.
+  env: {}
+
+  # More bind mounts as "host:container[:opts]", e.g. a cache a custom image needs.
+  # Docker creates a missing host folder.
+  extra_volumes: []
+
+  # Docker security options, e.g. ["seccomp=unconfined"] for an image that needs
+  # syscalls Docker's default profile blocks (io_uring). Leave empty unless needed.
+  security_opt: []
+
+  state: present
+
+# Host folder of models (hf_models_dir in the hf_models role), mounted read-only at /models.
+vllm_server_models_dir: /opt/models
+# Compile caches of vLLM, FlashInfer and Triton (in vllm/, flashinfer/ and triton/
+# under this), shared by all instances so restarts are faster.
+vllm_server_cache_dir: /opt/vllm-cache
+# Each instance gets <this>/<name>/compose.yaml.
+vllm_server_compose_dir: /opt/vllm
+
+# The instances' gpu_memory_utilization added together may not exceed this.
+vllm_server_gpu_memory_limit: 0.9
+
+# Seconds to wait for an instance to load its model and report healthy.
+# The first start of a new model compiles kernels and can take 10+ minutes.
+vllm_server_start_timeout: 1800
+
+# A container with an instance's name that this role did not create (e.g. one
+# started with docker run) blocks the deploy. Set true to remove it instead.
+vllm_server_replace_unmanaged: false

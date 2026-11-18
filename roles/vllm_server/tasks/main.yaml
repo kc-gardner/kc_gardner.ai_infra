@@ -1,0 +1,28 @@
+- name: Preflight checks
+  ansible.builtin.import_tasks: preflight.yaml
+
+# Only runs with vllm_server_replace_unmanaged: true (preflight fails otherwise).
+- name: Remove containers this role did not create
+  ansible.builtin.command: docker rm --force {{ item | quote }}
+  changed_when: true
+  loop: "{{ vllm_server_unmanaged }}"
+
+- name: Remove instances
+  ansible.builtin.include_tasks: remove.yaml
+  loop: "{{ vllm_server_list | selectattr('state', 'eq', 'absent') }}"
+  loop_control:
+    loop_var: vllm_server
+    label: "{{ vllm_server.name }}"
+
+# One at a time, each waiting until healthy: vLLM checks free GPU memory when it
+# starts, and two loading at once can each see the other's memory as taken.
+- name: Deploy instances
+  ansible.builtin.include_tasks: deploy.yaml
+  loop: "{{ vllm_server_list | selectattr('state', 'eq', 'present') }}"
+  loop_control:
+    loop_var: vllm_server
+    label: "{{ vllm_server.name }}"
+
+- name: Report instances
+  ansible.builtin.debug:
+    msg: "{{ vllm_server_report | default(['No instances to deploy.']) }}"

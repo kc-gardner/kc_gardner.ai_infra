@@ -1,0 +1,12 @@
+galaxy_info:
+  role_name: open_webui
+  author: KC
+  description: Run Open WebUI in Docker Compose, connected to OpenAI-compatible APIs such as vLLM
+  license: MIT
+  min_ansible_version: "2.17"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+
+dependencies: []

@@ -1,0 +1,26 @@
+- name: Preflight checks
+  ansible.builtin.import_tasks: preflight.yaml
+
+- name: Install Podman
+  ansible.builtin.import_tasks: packages.yaml
+
+- name: Write the configuration
+  ansible.builtin.import_tasks: config.yaml
+
+- name: Set up the TLS certificate
+  ansible.builtin.import_tasks: tls.yaml
+
+- name: Install the Quadlet units
+  ansible.builtin.import_tasks: quadlets.yaml
+
+- name: Pull the images
+  ansible.builtin.import_tasks: images.yaml
+  when: not ansible_check_mode
+
+- name: Start the services
+  ansible.builtin.import_tasks: services.yaml
+  when: not ansible_check_mode
+
+- name: Validate the deployment
+  ansible.builtin.import_tasks: validate.yaml
+  when: not ansible_check_mode

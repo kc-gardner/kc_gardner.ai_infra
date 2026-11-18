@@ -1,0 +1,38 @@
+namespace: kc_gardner
+name: ai_infra
+version: 0.1.0
+readme: README.md
+authors:
+  - KC Gardner
+description: Roles for self-hosted AI infrastructure - vLLM, GPUStack and Open WebUI on NVIDIA hosts, and the KVM, NetBox, inventory and patching roles for the lab around them
+license:
+  - MIT
+tags:
+  - infrastructure
+  - ai
+  - llm
+  - vllm
+  - gpustack
+  - nvidia
+  - docker
+  - podman
+  - kvm
+  - libvirt
+  - netbox
+  - rhel
+  - fedora
+  - ubuntu
+dependencies:
+  ansible.posix: ">=1.5.0"
+  community.crypto: ">=2.0.0"
+  community.docker: ">=3.8.0"
+  community.general: ">=8.0.0"
+  community.libvirt: ">=1.3.0"
+repository: https://github.com/kc-gardner/kc_gardner.ai_infra
+issues: https://github.com/kc-gardner/kc_gardner.ai_infra/issues
+build_ignore:
+  - .git
+  - .ansible
+  - "*.tar.gz"
+  - "*.qcow2"
+  - reports

@@ -1,0 +1,116 @@
+# Runs once per present model (hf_model). hf download --local-dir keeps its
+# bookkeeping in <folder>/.cache/huggingface; the first line of each .metadata
+# file there is the commit the file came from.
+- name: Read the commit already downloaded for {{ hf_model.repo }}
+  ansible.builtin.slurp:
+    src: "{{ hf_models_dir }}/{{ hf_model.name }}/.cache/huggingface/download/config.json.metadata"
+  register: hf_models_metadata
+  failed_when: false
+
+- name: Decide whether to download {{ hf_model.repo }}
+  ansible.builtin.set_fact:
+    hf_models_old_commit: "{{ hf_models_old_commit_value }}"
+    hf_models_download: >-
+      {{ hf_models_old_commit_value == ''
+         or hf_models_update | bool
+         or (hf_model.revision | string is match('^[0-9a-f]{40}$') and hf_model.revision != hf_models_old_commit_value) }}
+  vars:
+    hf_models_old_commit_value: >-
+      {{ (hf_models_metadata.content | b64decode).splitlines() | first | default('') | trim
+         if hf_models_metadata.content is defined else '' }}
+
+- name: Check free space before downloading {{ hf_model.repo }}
+  ansible.builtin.command: df --output=avail -BG {{ hf_models_dir | quote }}
+  register: hf_models_df
+  changed_when: false
+  check_mode: false
+  when: hf_models_download | bool
+
+- name: Ensure there is room for {{ hf_model.repo }}
+  ansible.builtin.assert:
+    that:
+      - hf_models_free_gb | int >= hf_models_min_free_gb | int
+    fail_msg: >-
+      {{ hf_models_dir }} has {{ hf_models_free_gb }} GB free, less than
+      hf_models_min_free_gb ({{ hf_models_min_free_gb }} GB). Free some space or lower the limit.
+    quiet: true
+  vars:
+    hf_models_free_gb: "{{ hf_models_df.stdout_lines[-1] | trim | regex_replace('G$', '') }}"
+  when: hf_models_download | bool
+
+# The token is passed through the environment, not the command line, so it does
+# not show up in the task result or in ps. -e HF_TOKEN with no value copies it in.
+- name: Download {{ hf_model.repo }}
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      # The upstream vLLM image's entrypoint is `vllm serve`.
+      - --entrypoint
+      - ""
+      - --name
+      - hf-download-{{ hf_model.name | lower | regex_replace('[^a-z0-9_.-]', '-') }}
+      - -e
+      - HF_TOKEN
+      - -e
+      - HF_HUB_DISABLE_TELEMETRY=1
+      - -v
+      - "{{ hf_models_dir }}:/models"
+      - "{{ hf_models_image }}"
+      - hf
+      - download
+      - "{{ hf_model.repo }}"
+      - --revision
+      - "{{ hf_model.revision }}"
+      - --local-dir
+      - /models/{{ hf_model.name }}
+  environment: "{{ {'HF_TOKEN': hf_models_token} if hf_models_token | length > 0 else {} }}"
+  async: "{{ hf_models_download_timeout | int }}"
+  poll: 30
+  # Only runs when a download is due; the report shows whether the commit changed.
+  changed_when: true
+  when: hf_models_download | bool
+
+- name: List the downloaded files of {{ hf_model.repo }}
+  ansible.builtin.find:
+    paths: "{{ hf_models_dir }}/{{ hf_model.name }}"
+    patterns: ["config.json", "*.safetensors"]
+    # Some repos keep the weights in a subfolder, e.g. tensors/.
+    recurse: true
+    depth: 2
+  register: hf_models_files
+  when: not ansible_check_mode
+
+- name: Ensure the config and weights are present for {{ hf_model.repo }}
+  ansible.builtin.assert:
+    that:
+      - hf_models_files.files | selectattr('path', 'eq', hf_models_dir ~ '/' ~ hf_model.name ~ '/config.json') | length == 1
+      - hf_models_files.files | selectattr('path', 'search', '\.safetensors$') | length > 0
+    fail_msg: >-
+      {{ hf_models_dir }}/{{ hf_model.name }} has no config.json or no .safetensors weights.
+      Check the repo name and revision, or set hf_models_token for a gated model.
+    quiet: true
+  when: not ansible_check_mode
+
+- name: Read the commit now in place for {{ hf_model.repo }}
+  ansible.builtin.slurp:
+    src: "{{ hf_models_dir }}/{{ hf_model.name }}/.cache/huggingface/download/config.json.metadata"
+  register: hf_models_metadata_after
+  when: not ansible_check_mode
+
+- name: "Add to the report: {{ hf_model.repo }}"
+  ansible.builtin.set_fact:
+    hf_models_report: >-
+      {{ hf_models_report | default([]) + [hf_model.repo ~ ' -> ' ~ hf_models_dir ~ '/' ~ hf_model.name ~ ' @ '
+         ~ (('would download ' ~ hf_model.revision) if hf_models_new_commit == ''
+            else hf_models_new_commit[:12]
+                 ~ (' (was ' ~ hf_models_old_commit[:12] ~ ')' if hf_models_old_commit not in ['', hf_models_new_commit] else '')
+                 ~ (' (new)' if hf_models_old_commit == '' else ''))] }}
+  vars:
+    # In check mode nothing is downloaded, so the commit is still the old one
+    # unless a download was due.
+    hf_models_new_commit: >-
+      {{ (hf_models_metadata_after.content | b64decode).splitlines() | first | trim
+         if hf_models_metadata_after.content is defined
+         else ('' if hf_models_download | bool else hf_models_old_commit) }}

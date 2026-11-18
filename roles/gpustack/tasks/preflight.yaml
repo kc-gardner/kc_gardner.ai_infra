@@ -1,0 +1,25 @@
+- name: Ensure the host is Fedora or RHEL 9 or 10
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'RedHat'
+      - ansible_facts.distribution == 'Fedora' or ansible_facts.distribution_major_version in ['9', '10']
+    fail_msg: >-
+      gpustack supports Fedora and RHEL 9 and 10, found
+      {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}
+    quiet: true
+
+- name: Ensure the port is valid
+  ansible.builtin.assert:
+    that:
+      - gpustack_port | int > 0
+      - gpustack_port | int < 65536
+    fail_msg: "gpustack_port must be a port number, found {{ gpustack_port }}"
+    quiet: true
+
+# The values go in an environment file, which holds one value per line.
+- name: Ensure the environment values are each on one line
+  ansible.builtin.assert:
+    that:
+      - "'\n' not in gpustack_bootstrap_password ~ gpustack_server_external_url ~ gpustack_env.values() | join('')"
+    fail_msg: gpustack_bootstrap_password, gpustack_server_external_url and the values in gpustack_env must each be on one line
+    quiet: true

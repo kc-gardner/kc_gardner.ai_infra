@@ -1,0 +1,50 @@
+# Packages for a headless KVM/libvirt host (no GUI tools).
+kvm_host_packages:
+  - qemu-kvm
+  - libvirt-daemon-kvm
+  - libvirt-daemon-config-network
+  - libvirt-client
+  - virt-install
+  - guestfs-tools
+  - edk2-ovmf
+  - swtpm
+  - swtpm-tools
+  - python3-libvirt
+  - python3-lxml
+  - policycoreutils-python-utils
+  - tuned
+
+# Fedora uses the modular libvirt daemons, which are socket activated.
+kvm_host_libvirt_sockets:
+  - virtqemud.socket
+  - virtnetworkd.socket
+  - virtstoraged.socket
+  - virtnodedevd.socket
+  - virtsecretd.socket
+  - virtinterfaced.socket
+
+# Users added to the libvirt group so they can manage qemu:///system without sudo.
+kvm_host_users: []
+
+# tuned profile optimised for hosting VMs.
+kvm_host_tuned_profile: virtual-host
+
+# Keep libvirt's NAT network ("default", 192.168.122.0/24) active and autostarted.
+kvm_host_default_network: true
+
+# Storage pools. Paths outside /var/lib/libvirt/images get the virt_image_t SELinux label.
+kvm_host_storage_pools:
+  - name: default
+    path: /var/lib/libvirt/images
+
+# Bridge the physical NIC so VMs get addresses on the LAN.
+# Off by default: it briefly drops the host's network. The change rolls back
+# automatically if the bridge fails to get an IP address.
+kvm_host_bridge_enabled: false
+kvm_host_bridge_name: br0
+kvm_host_bridge_interface: "{{ ansible_facts.default_ipv4.interface }}"
+# libvirt network that points at the bridge (use with: virt-install --network network=host-bridge).
+kvm_host_bridge_libvirt_network: host-bridge
+
+# Web UI for managing VMs on a headless host (https://<host>:9090).
+kvm_host_cockpit_enabled: false

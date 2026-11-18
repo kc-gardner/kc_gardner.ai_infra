@@ -1,0 +1,38 @@
+- name: Start PostgreSQL and Valkey
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: "{{ 'restarted' if item in netbox_restart else 'started' }}"
+  loop:
+    - netbox-postgres
+    - netbox-valkey
+
+# PostgreSQL only reads POSTGRES_PASSWORD when it creates the database, so a
+# changed netbox_db_password is applied here. Local connections inside the
+# container need no password. On a new install this sets the same password again.
+- name: Apply the database password
+  ansible.builtin.command:
+    argv: [podman, exec, -i, netbox-postgres, psql, -U, "{{ netbox_db_user }}", -d, "{{ netbox_db_name }}", -v, ON_ERROR_STOP=1]
+    stdin: >-
+      ALTER ROLE "{{ netbox_db_user }}"
+      PASSWORD '{{ netbox_db_password | replace("'", "''") }}';
+  when: netbox_postgres_env_file is changed
+  changed_when: true
+  no_log: true
+
+# A first start or an upgrade migrates the database, which takes a few minutes.
+# The worker and nginx require netbox.service, so systemd restarts them with it.
+- name: Start NetBox
+  ansible.builtin.systemd_service:
+    name: netbox
+    state: "{{ 'restarted' if 'netbox' in netbox_restart else 'started' }}"
+  register: netbox_started
+  async: 1200
+  poll: 10
+
+- name: Start the worker and nginx
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: "{{ 'restarted' if item in netbox_restart and netbox_started is not changed else 'started' }}"
+  loop:
+    - netbox-worker
+    - netbox-nginx

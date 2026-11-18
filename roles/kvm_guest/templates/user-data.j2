@@ -1,0 +1,43 @@
+#cloud-config
+hostname: {{ kvm_guest.name }}
+fqdn: {{ kvm_guest.fqdn | default(kvm_guest.name) }}
+
+users:
+  - name: {{ kvm_guest_user }}
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    ssh_authorized_keys:
+{% for key in kvm_guest_ssh_authorized_keys %}
+      - {{ key | trim | to_json }}
+{% endfor %}
+
+ssh_pwauth: false
+{% if kvm_guest_catalog[kvm_guest.os].rhsm | default(false) and kvm_guest_rhsm_org and kvm_guest_rhsm_activation_key %}
+
+rh_subscription:
+  org: {{ kvm_guest_rhsm_org | string | to_json }}
+  activation-key: {{ kvm_guest_rhsm_activation_key | to_json }}
+{% endif %}
+{% set packages = kvm_guest_catalog[kvm_guest.os].packages | default([]) %}
+{% if packages %}
+
+packages:
+{% for package in packages %}
+  - {{ package }}
+{% endfor %}
+{% endif %}
+
+runcmd:
+{% for command in kvm_guest_catalog[kvm_guest.os].runcmd | default([]) %}
+  - {{ command | to_json }}
+{% endfor %}
+  - [systemctl, start, qemu-guest-agent]
+
+# virt-install runs the first boot with on_reboot=destroy and the cloud-init ISO
+# attached. Powering off once cloud-init is done lets the role start the VM
+# again with its permanent configuration, so later reboots work.
+power_state:
+  mode: poweroff
+  message: cloud-init first boot finished, powering off
+  timeout: 60

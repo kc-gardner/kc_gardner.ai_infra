@@ -1,0 +1,36 @@
+- name: Preflight checks
+  ansible.builtin.import_tasks: preflight.yaml
+
+- name: Install and enable libvirt
+  ansible.builtin.import_tasks: libvirt.yaml
+
+# In check mode the packages above are not really installed, so later tasks
+# that depend on them are allowed to fail during a dry run.
+- name: Configure tuned
+  ansible.builtin.import_tasks: tuned.yaml
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Configure storage pools
+  ansible.builtin.import_tasks: storage.yaml
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Configure libvirt NAT network
+  ansible.builtin.import_tasks: network.yaml
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Configure host bridge
+  ansible.builtin.include_tasks:
+    file: bridge.yaml
+    apply:
+      ignore_errors: "{{ ansible_check_mode }}"
+  when: kvm_host_bridge_enabled | bool
+
+- name: Configure Cockpit
+  ansible.builtin.include_tasks:
+    file: cockpit.yaml
+    apply:
+      ignore_errors: "{{ ansible_check_mode }}"
+  when: kvm_host_cockpit_enabled | bool
+
+- name: Validate host
+  ansible.builtin.import_tasks: validate.yaml

@@ -1,0 +1,14 @@
+- name: Preflight checks
+  ansible.builtin.import_tasks: preflight.yaml
+
+- name: Configure unattended-upgrades
+  ansible.builtin.import_tasks: unattended.yaml
+
+# In check mode unattended-upgrades may not really be installed yet, so the
+# security dry run is allowed to fail.
+- name: Install updates
+  ansible.builtin.import_tasks: update.yaml
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Check for and handle a pending reboot
+  ansible.builtin.import_tasks: reboot.yaml

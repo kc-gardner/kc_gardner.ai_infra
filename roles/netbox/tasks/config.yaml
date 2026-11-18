@@ -1,0 +1,47 @@
+- name: Create the configuration directory
+  ansible.builtin.file:
+    path: "{{ netbox_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+# Only root can read these: they hold the secret key and database password.
+- name: Write the NetBox environment file
+  ansible.builtin.template:
+    src: netbox.env.j2
+    dest: "{{ netbox_config_dir }}/netbox.env"
+    owner: root
+    group: root
+    mode: "0600"
+  register: netbox_env_file
+  no_log: true
+
+- name: Write the PostgreSQL environment file
+  ansible.builtin.template:
+    src: postgres.env.j2
+    dest: "{{ netbox_config_dir }}/postgres.env"
+    owner: root
+    group: root
+    mode: "0600"
+  register: netbox_postgres_env_file
+  no_log: true
+
+# Mounted into the NetBox containers, whose user is in group root.
+- name: Write the extra NetBox configuration
+  ansible.builtin.template:
+    src: zz_role.py.j2
+    dest: "{{ netbox_config_dir }}/zz_role.py"
+    owner: root
+    group: root
+    mode: "0640"
+  register: netbox_extra_config_file
+
+- name: Write the nginx configuration
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ netbox_config_dir }}/nginx.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  register: netbox_nginx_config_file

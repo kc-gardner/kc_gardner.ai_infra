@@ -1,0 +1,7 @@
+# A reload (SIGHUP) makes dockerd read daemon.json again. runtimes and
+# default-runtime are among the settings it applies without a restart, so
+# running containers are not touched.
+- name: Reload docker
+  ansible.builtin.systemd_service:
+    name: docker
+    state: reloaded

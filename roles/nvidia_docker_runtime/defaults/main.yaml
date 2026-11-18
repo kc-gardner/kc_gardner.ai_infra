@@ -1,0 +1,20 @@
+# present registers the NVIDIA runtime with Docker; absent removes it again.
+nvidia_docker_runtime_state: present
+
+# Make it Docker's default runtime, so every container goes through it. Off by
+# default: containers ask for it with --runtime nvidia, and CDI (--device
+# nvidia.com/gpu=all, or `driver: nvidia` in Compose) keeps working either way.
+nvidia_docker_runtime_default: false
+
+# The name containers use with --runtime, and the binary Docker runs for it.
+# A bare name is looked up on dockerd's PATH, as nvidia-ctk writes it.
+nvidia_docker_runtime_name: nvidia
+nvidia_docker_runtime_path: nvidia-container-runtime
+
+# Docker's configuration file. Other settings in it are kept.
+nvidia_docker_runtime_daemon_json: /etc/docker/daemon.json
+
+# After registering, run `nvidia-smi -L` in this image through the runtime to
+# prove a container gets the GPU. Empty skips the test. Use an image that is
+# already on the host (e.g. the vLLM image) to avoid a download.
+nvidia_docker_runtime_test_image: ""

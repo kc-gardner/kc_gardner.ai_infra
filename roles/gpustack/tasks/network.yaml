@@ -1,0 +1,31 @@
+- name: Read the lowest port an unprivileged user may bind
+  ansible.builtin.command:
+    argv: [sysctl, -n, net.ipv4.ip_unprivileged_port_start]
+  register: gpustack_unprivileged_port_start
+  changed_when: false
+  check_mode: false
+  when: gpustack_port | int < 1024
+
+- name: Let unprivileged users bind the port
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_unprivileged_port_start
+    value: "{{ gpustack_port | int }}"
+    sysctl_file: /etc/sysctl.d/90-gpustack.conf
+    sysctl_set: true
+  when:
+    - gpustack_port | int < 1024
+    - gpustack_unprivileged_port_start.stdout | int > gpustack_port | int
+
+- name: Gather service facts
+  ansible.builtin.service_facts:
+  when: gpustack_firewall_enabled | bool
+
+- name: Open the port in firewalld
+  ansible.posix.firewalld:
+    port: "{{ gpustack_port | int }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  when:
+    - gpustack_firewall_enabled | bool
+    - ansible_facts.services['firewalld.service'].state | default('') == 'running'

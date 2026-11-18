@@ -1,0 +1,14 @@
+- name: Set up a KVM virtualization host
+  hosts: kvm_hosts
+  become: true
+  gather_facts: true
+
+  vars:
+    # Users allowed to manage VMs without sudo. Change to your own.
+    kvm_host_users:
+      - admin
+    kvm_host_bridge_enabled: true
+    kvm_host_cockpit_enabled: true
+
+  roles:
+    - kc_gardner.ai_infra.kvm_host

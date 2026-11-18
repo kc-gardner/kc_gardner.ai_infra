@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+[Unit]
+Description=NetBox nginx reverse proxy
+# nginx resolves the netbox container's address when it starts, so it has to
+# restart whenever NetBox does. Requires= makes systemd do that.
+Requires=netbox.service
+After=netbox.service
+
+[Container]
+ContainerName=netbox-nginx
+Image={{ netbox_nginx_image }}
+Network=netbox.network
+PublishPort={{ netbox_http_port }}:80
+PublishPort={{ netbox_https_port }}:443
+Volume={{ netbox_config_dir }}/nginx.conf:/etc/nginx/conf.d/default.conf:ro,Z
+Volume={{ netbox_tls_dir }}:/etc/nginx/tls:ro,Z
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

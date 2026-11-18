@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+# Loaded after the image's own configuration files, so settings here win.
+
+# Behind nginx over HTTPS.
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
+{% if netbox_configuration_extra | length > 0 %}
+
+# netbox_configuration_extra
+{{ netbox_configuration_extra }}
+{% endif %}

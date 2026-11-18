@@ -1,0 +1,33 @@
+# Not a system user: useradd only gives ordinary users the subordinate ID
+# ranges a rootless container maps its other users into. The image's embedded
+# PostgreSQL runs as UID 9999. An existing user is left as it is.
+- name: Create the user
+  ansible.builtin.user:
+    name: "{{ gpustack_user }}"
+  register: gpustack_user_info
+
+- name: Note the user's home and UID
+  ansible.builtin.set_fact:
+    gpustack_home: "{{ gpustack_user_info.home }}"
+    gpustack_uid: "{{ gpustack_user_info.uid }}"
+
+- name: Check the user has subordinate IDs
+  ansible.builtin.command:
+    argv: [grep, -c, "^{{ gpustack_user }}:", /etc/subuid, /etc/subgid]
+  register: gpustack_subids
+  changed_when: false
+  failed_when: gpustack_subids.rc != 0 or gpustack_subids.stdout is search(':0$', multiline=True)
+  when: not ansible_check_mode
+
+# Without lingering the user's systemd, and the container with it, only runs
+# while the user is logged in.
+- name: Let the user's services run without a login
+  ansible.builtin.command:
+    argv: [loginctl, enable-linger, "{{ gpustack_user }}"]
+    creates: "/var/lib/systemd/linger/{{ gpustack_user }}"
+
+- name: Wait for the user's systemd
+  ansible.builtin.wait_for:
+    path: "/run/user/{{ gpustack_uid }}/bus"
+    timeout: 60
+  when: not ansible_check_mode

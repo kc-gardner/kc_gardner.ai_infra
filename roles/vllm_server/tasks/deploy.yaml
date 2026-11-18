@@ -1,0 +1,95 @@
+# Runs once per present instance (vllm_server).
+- name: Create the compose folder for {{ vllm_server.name }}
+  ansible.builtin.file:
+    path: "{{ vllm_server_compose_dir }}/{{ vllm_server.name }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create the cache folders
+  ansible.builtin.file:
+    path: "{{ vllm_server_cache_dir }}/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: [vllm, flashinfer, triton]
+
+- name: Write the compose file for {{ vllm_server.name }}
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ vllm_server_compose_dir }}/{{ vllm_server.name }}/compose.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: vllm_server_compose_file
+
+# Creates the container, recreates it when the compose file changed, or starts it when it was
+# stopped. --wait blocks until the healthcheck passes, i.e. the model is loaded and the API answers.
+# A dry run cannot start a stopped container, so check mode does not wait.
+- name: Start {{ vllm_server.name }}
+  community.docker.docker_compose_v2:
+    project_src: "{{ vllm_server_compose_dir }}/{{ vllm_server.name }}"
+    state: present
+    pull: missing
+    remove_orphans: true
+    wait: "{{ not ansible_check_mode }}"
+    wait_timeout: "{{ vllm_server_start_timeout | int }}"
+  register: vllm_server_up
+  # Check mode does not write the compose file, so a dry run here would try the old one
+  # (or none, for a new instance). The template's diff shows what would change instead.
+  when: not (ansible_check_mode and vllm_server_compose_file is changed)
+
+- name: Ask which model is served on port {{ vllm_server.port }}
+  ansible.builtin.uri:
+    url: http://127.0.0.1:{{ vllm_server.port }}/v1/models
+    return_content: true
+  register: vllm_server_models
+  when: not ansible_check_mode
+
+- name: Ensure the served model is {{ vllm_server.served_name }}
+  ansible.builtin.assert:
+    that:
+      - vllm_server.served_name in vllm_server_models.json.data | map(attribute='id')
+    fail_msg: >-
+      Port {{ vllm_server.port }} serves {{ vllm_server_models.json.data | map(attribute='id') | join(', ') }},
+      not {{ vllm_server.served_name }}.
+    quiet: true
+  when: not ansible_check_mode
+
+# e.g. "Maximum concurrency for 262,144 tokens per request: 6.12x"
+- name: Read the memory report of {{ vllm_server.name }}
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    docker logs {{ vllm_server.name | quote }} 2>&1 | grep -E 'Maximum concurrency|GPU KV cache size' | tail -n 2
+  args:
+    executable: /bin/bash
+  register: vllm_server_memory_log
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+# The module lists what compose did: Creating or Recreate when the container was (re)created,
+# only Starting when a stopped one was started. In check mode a changed compose file skips the
+# start task above, so it counts as a recreate.
+- name: Record what happened to {{ vllm_server.name }}
+  ansible.builtin.set_fact:
+    vllm_server_outcome: >-
+      {%- set did = vllm_server_up.actions | default([]) | selectattr('what', 'eq', 'container')
+                    | map(attribute='status') | list -%}
+      {%- if vllm_server_up is skipped or 'Creating' in did or 'Recreate' in did -%}
+      (re)created
+      {%- elif 'Starting' in did -%}
+      started
+      {%- endif -%}
+
+- name: "Add to the report: {{ vllm_server.name }}"
+  ansible.builtin.set_fact:
+    vllm_server_report: >-
+      {{ vllm_server_report | default([]) + [
+           vllm_server.name ~ ': ' ~ vllm_server.served_name ~ ' (' ~ vllm_server.model ~ ') on port '
+           ~ vllm_server.port ~ ((', ' ~ ('would be ' if ansible_check_mode else '') ~ vllm_server_outcome)
+                                 if vllm_server_outcome else '')]
+         + (vllm_server_memory_log.stdout_lines | default([])
+            | map('regex_replace', '^.*?(?=Maximum concurrency|GPU KV cache size)', '  ') | list) }}

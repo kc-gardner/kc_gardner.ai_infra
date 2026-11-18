@@ -1,0 +1,52 @@
+- name: Create the configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ gpustack_user }}"
+    group: "{{ gpustack_user }}"
+    mode: "0700"
+  loop:
+    - "{{ gpustack_home }}/.config"
+    - "{{ gpustack_home }}/.config/containers"
+    - "{{ gpustack_quadlet_dir }}"
+    - "{{ gpustack_config_dir }}"
+
+# Only the user can read it: it may hold the admin password.
+- name: Write the environment file
+  ansible.builtin.template:
+    src: gpustack.env.j2
+    dest: "{{ gpustack_env_file }}"
+    owner: "{{ gpustack_user }}"
+    group: "{{ gpustack_user }}"
+    mode: "0600"
+  register: gpustack_env_written
+  no_log: true
+
+- name: Install the Quadlet units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ gpustack_quadlet_dir }}/{{ item }}"
+    owner: "{{ gpustack_user }}"
+    group: "{{ gpustack_user }}"
+    mode: "0644"
+  loop:
+    - gpustack-data.volume
+    - gpustack.container
+  register: gpustack_quadlet_files
+
+# The generator skips a unit it cannot parse and only logs why, which shows up
+# later as "unit not found". Run it by hand so a mistake fails here instead.
+- name: Check the Quadlet units
+  ansible.builtin.command:
+    argv: [/usr/lib/systemd/system-generators/podman-system-generator, --user, --dryrun]
+    chdir: "{{ gpustack_home }}"
+  become: true
+  become_user: "{{ gpustack_user }}"
+  environment: "{{ gpustack_user_env }}"
+  register: gpustack_quadlet_check
+  changed_when: false
+  failed_when: >-
+    gpustack_quadlet_check.rc != 0
+    or gpustack_quadlet_check.stderr is search('(?i)error|unsupported key')
+    or 'gpustack.service' not in gpustack_quadlet_check.stdout
+  when: not ansible_check_mode

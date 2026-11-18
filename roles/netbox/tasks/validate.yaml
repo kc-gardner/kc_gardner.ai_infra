@@ -1,0 +1,42 @@
+- name: Check the NetBox services are running
+  ansible.builtin.command:
+    argv: "{{ ['systemctl', 'is-active'] + netbox_services }}"
+  changed_when: false
+
+- name: Check NetBox answers through nginx
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:{{ netbox_https_port }}/login/"
+    headers:
+      Host: "{{ netbox_server_names_clean[0] }}"
+    validate_certs: false
+    status_code: 200
+  register: netbox_login_page
+  retries: 10
+  delay: 3
+  until: netbox_login_page.status == 200
+
+- name: Check NetBox reports the expected version
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - netbox
+      - /opt/netbox/venv/bin/python
+      - /opt/netbox/netbox/manage.py
+      - shell
+      - --no-imports
+      - --interface
+      - python
+      - -c
+      - "from django.conf import settings; print(settings.RELEASE.version)"
+  register: netbox_running_version
+  changed_when: false
+  failed_when: >-
+    netbox_running_version.rc != 0
+    or netbox_running_version.stdout_lines | last != netbox_version
+
+- name: Show where NetBox is
+  ansible.builtin.debug:
+    msg: >-
+      NetBox {{ netbox_running_version.stdout_lines | last }} is up at
+      https://{{ netbox_server_names_clean[0] }}{{ '' if netbox_https_port | int == 443 else ':' ~ netbox_https_port }}/

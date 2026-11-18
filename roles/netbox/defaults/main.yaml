@@ -1,0 +1,66 @@
+# NetBox release, and the netbox-docker release that packages it. Together they
+# pick the image tag, see https://github.com/netbox-community/netbox-docker/releases.
+# Changing them on an installed host upgrades NetBox: the container is recreated
+# from the new image and migrates the database when it starts.
+netbox_version: "4.7.5"
+netbox_docker_version: "5.1.2"
+
+# Set netbox_image to your own image to add plugins. Keep netbox_version in step
+# with it: the role checks that the running NetBox reports that version.
+netbox_image: "docker.io/netboxcommunity/netbox:v{{ netbox_version }}-{{ netbox_docker_version }}"
+netbox_postgres_image: docker.io/library/postgres:18-alpine
+netbox_valkey_image: docker.io/valkey/valkey:9.1-alpine
+netbox_nginx_image: docker.io/library/nginx:1.30-alpine
+
+# Names and addresses NetBox answers to. The first is used for the TLS certificate.
+netbox_server_names:
+  - "{{ ansible_facts.fqdn }}"
+  - "{{ ansible_facts.hostname }}"
+  - "{{ ansible_facts.default_ipv4.address | default('') }}"
+
+# Required secrets, both at least 50 characters, on one line. Keep them out of
+# git: see playbooks/vars/netbox.example.yaml. Changing the secret key logs everyone out;
+# changing the pepper invalidates every v2 API token.
+netbox_secret_key: ""
+netbox_api_token_pepper: ""
+
+# PostgreSQL database, in its own container. The password is required.
+netbox_db_name: netbox
+netbox_db_user: netbox
+netbox_db_password: ""
+
+# First superuser, created when NetBox starts if it does not exist. The password
+# of an existing user is never reset. An empty password creates no user.
+netbox_superuser_name: admin
+netbox_superuser_email: admin@example.com
+netbox_superuser_password: ""
+
+netbox_time_zone: UTC
+
+# Granian worker processes serving NetBox.
+netbox_workers: 4
+
+# Extra environment variables for the NetBox containers, for any setting the
+# netbox-docker image reads from its environment, e.g. {METRICS_ENABLED: "true"}.
+netbox_env: {}
+
+# Python code for a configuration file loaded after the image's own, for
+# settings with no environment variable, e.g. PLUGINS or ADMINS.
+netbox_configuration_extra: ""
+
+# HTTPS certificate and key, already on the host. They are copied into
+# netbox_config_dir/tls on each run. Empty: the role makes a self-signed
+# certificate for the names in netbox_server_names.
+netbox_tls_cert_file: ""
+netbox_tls_key_file: ""
+netbox_tls_selfsigned_days: 3650
+
+# Host ports. HTTP only redirects to HTTPS.
+netbox_http_port: 80
+netbox_https_port: 443
+
+# Largest upload nginx accepts, e.g. for image attachments.
+netbox_client_max_body_size: 25m
+
+# Configuration on the host: environment files, nginx.conf and the certificate.
+netbox_config_dir: /etc/netbox

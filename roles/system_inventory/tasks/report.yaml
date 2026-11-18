@@ -1,0 +1,35 @@
+---
+# Writes inventory.json and inventory.csv for every host in the play, once, on the controller.
+# Hosts that failed or were unreachable are left out.
+
+- name: Write reports on the controller
+  delegate_to: localhost
+  run_once: true
+  become: false
+  vars:
+    __system_inventory_all: >-
+      {{ ansible_play_hosts
+         | map('extract', hostvars, 'system_inventory_record')
+         | sort(attribute='hostname') }}
+  block:
+    - name: Create report directory
+      ansible.builtin.file:
+        path: "{{ system_inventory_report_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write JSON report
+      ansible.builtin.copy:
+        content: "{{ __system_inventory_all | to_nice_json }}\n"
+        dest: "{{ system_inventory_report_dir }}/inventory.json"
+        mode: "0644"
+
+    - name: Write CSV report
+      ansible.builtin.template:
+        src: inventory.csv.j2
+        dest: "{{ system_inventory_report_dir }}/inventory.csv"
+        mode: "0644"
+
+    - name: Show report location
+      ansible.builtin.debug:
+        msg: "{{ __system_inventory_all | length }} hosts written to {{ system_inventory_report_dir }}"

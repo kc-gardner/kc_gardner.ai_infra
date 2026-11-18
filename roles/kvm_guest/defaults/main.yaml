@@ -1,0 +1,151 @@
+# VMs to manage on the KVM host. Each entry needs at least `name` and `os`;
+# anything left out comes from kvm_guest_defaults. Example:
+#
+# kvm_guests:
+#   - name: rhel01
+#     os: rhel
+#     vcpus: 4
+#     memory_mb: 8192
+#     disk_gb: 60
+#     network: host-bridge
+#   - name: ubuntu01
+#     os: ubuntu
+#   - name: old-vm
+#     os: fedora
+#     state: absent   # destroys the VM and deletes its disk
+#   - name: netbox01
+#     os: fedora
+#     network: host-bridge
+#     ip: 192.0.2.120/24       # static address; leave out for DHCP
+#     gateway: 192.0.2.1       # optional, defaults to kvm_guest_gateway
+#     dns: [192.0.2.117]       # optional, defaults to kvm_guest_dns_servers
+#     dns_search: [lab.example.com]  # optional, defaults to kvm_guest_dns_search
+#     mac: "52:54:00:12:34:56"    # optional, see below
+#
+# Every VM gets a fixed MAC address. Without `mac`, one is derived from the
+# KVM host and VM names, so a rebuilt VM keeps its MAC and a DHCP reservation
+# made for it keeps working.
+kvm_guests: []
+
+# Network settings for VMs with a static `ip`, unless the VM sets its own.
+# Only used at creation, like the rest of the VM's settings.
+kvm_guest_gateway: ""
+kvm_guest_dns_servers: []
+kvm_guest_dns_search: []
+
+kvm_guest_defaults:
+  vcpus: 2
+  memory_mb: 2048
+  disk_gb: 20
+  # libvirt network: "default" (NAT) or "host-bridge" (LAN) from the kvm_host role.
+  network: default
+  autostart: true
+  state: present
+
+# Where base images and VM disks live (the kvm_host "default" pool).
+kvm_guest_image_dir: /var/lib/libvirt/images
+# cloud-init user-data/meta-data for each VM, kept for reference.
+kvm_guest_cloud_init_dir: /var/lib/libvirt/cloud-init
+
+# Login user created in every VM by cloud-init, with passwordless sudo.
+kvm_guest_user: ansible
+# Public keys for kvm_guest_user. At least one is required: the VMs have no password login.
+kvm_guest_ssh_authorized_keys: []
+
+# Seconds to wait for a new VM's first boot: cloud-init installs packages (and
+# registers RHEL VMs), then powers the VM off so it restarts with its permanent
+# libvirt configuration.
+kvm_guest_first_boot_timeout: 900
+
+# Wait for each running VM to report an IP address through qemu-guest-agent.
+kvm_guest_wait_for_ip: true
+kvm_guest_wait_for_ip_timeout: 300
+
+# Cloud images per OS. Each entry sets one image source:
+#   image_url - downloaded on the KVM host (checksum is optional)
+#   image_src - a file on the Ansible controller, copied to the host
+# os_variants are tried in order; the first one the host's osinfo database
+# knows is passed to virt-install. packages are installed by cloud-init, and
+# the optional runcmd list runs once on first boot. rhsm: true registers the
+# VM with Red Hat Subscription Management when kvm_guest_rhsm_* are set.
+# Change entries with kvm_guest_os_catalog_overrides rather than replacing this.
+kvm_guest_os_catalog:
+  fedora:
+    image_url: https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2
+    checksum: sha256:https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-44-1.7-x86_64-CHECKSUM
+    os_variants: [fedora44, fedora-unknown, linux2024]
+    packages: [qemu-guest-agent]
+  ubuntu:
+    image_url: https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img
+    checksum: sha256:https://cloud-images.ubuntu.com/resolute/current/SHA256SUMS
+    os_variants: [ubuntu26.04, ubunturesolute, ubuntu24.04, ubuntunoble, linux2024]
+    packages: [qemu-guest-agent]
+  ubuntu2404:
+    image_url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+    checksum: sha256:https://cloud-images.ubuntu.com/noble/current/SHA256SUMS
+    os_variants: [ubuntu24.04, ubuntunoble, linux2022]
+    packages: [qemu-guest-agent]
+  # openSUSE only keeps the latest build on the mirror, so these use the
+  # unversioned file names rather than pinning a build.
+  opensuse:
+    image_url: https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2
+    checksum: sha256:https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2.sha256
+    os_variants: [opensuse16.0, opensuse-unknown, linux2024]
+    packages: [qemu-guest-agent]
+  tumbleweed:
+    image_url: https://download.opensuse.org/tumbleweed/appliances/openSUSE-Tumbleweed-Minimal-VM.x86_64-Cloud.qcow2
+    checksum: sha256:https://download.opensuse.org/tumbleweed/appliances/openSUSE-Tumbleweed-Minimal-VM.x86_64-Cloud.qcow2.sha256
+    os_variants: [opensusetumbleweed, opensuse-unknown, linux2024]
+    packages: [qemu-guest-agent]
+  rocky:
+    image_url: https://download.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
+    checksum: sha256:https://download.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2.CHECKSUM
+    os_variants: [rocky10, rocky10-unknown, rhel10-unknown, linux2024]
+    packages: [qemu-guest-agent]
+  # The "latest" link on cloud.centos.org is not reliable, so this pins a build.
+  centos-stream:
+    image_url: https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-x86_64-10-20260728.1.x86_64.qcow2
+    checksum: sha256:https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-x86_64-10-20260728.1.x86_64.qcow2.SHA256SUM
+    os_variants: [centos-stream10, rhel10-unknown, linux2024]
+    packages: [qemu-guest-agent]
+  # Oracle publishes checksums only on https://yum.oracle.com/oracle-linux-templates.html
+  # The image is 37 GB, so VMs need disk_gb of at least 37.
+  oraclelinux:
+    image_url: https://yum.oracle.com/templates/OracleLinux/OL10/u1/x86_64/OL10U1_x86_64-kvm-b291.qcow2
+    checksum: sha256:8e59326c4bf7cfa58a6cac404db8ed583fe3a5f4c460e2b73c64988785bb4f0f
+    os_variants: [ol10-unknown, ol10.1, rhel10-unknown, linux2024]
+    packages: [qemu-guest-agent]
+    # Root is on LVM, which cloud-init does not grow.
+    runcmd:
+      - [growpart, /dev/vda, "4"]
+      - [pvresize, /dev/vda4]
+      - [lvextend, --resizefs, --extents, +100%FREE, /dev/vg_main/lv_root]
+  # Red Hat does not publish a public download URL. Download the
+  # "Red Hat Enterprise Linux KVM Guest Image" (qcow2) from
+  # https://access.redhat.com/downloads and set kvm_guest_rhel_image_src
+  # (RHEL 10) or kvm_guest_rhel9_image_src (RHEL 9).
+  # The KVM guest images already include qemu-guest-agent, and installing
+  # anything else needs the VM to be registered first.
+  rhel:
+    image_src: "{{ kvm_guest_rhel_image_src }}"
+    os_variants: [rhel10-unknown, rhel10.0, linux2024]
+    packages: []
+    rhsm: true
+  rhel9:
+    image_src: "{{ kvm_guest_rhel9_image_src }}"
+    os_variants: [rhel9-unknown, rhel9.7, linux2022]
+    packages: []
+    rhsm: true
+
+# Merged into kvm_guest_os_catalog (recursively), e.g. to pin another release
+# or add a new OS key.
+kvm_guest_os_catalog_overrides: {}
+
+# Paths on the Ansible controller to the RHEL KVM guest qcow2 images.
+kvm_guest_rhel_image_src: ""
+kvm_guest_rhel9_image_src: ""
+
+# Optional: register RHEL VMs (catalog entries with rhsm: true) with Red Hat
+# Subscription Management on first boot, using an activation key.
+kvm_guest_rhsm_org: ""
+kvm_guest_rhsm_activation_key: ""

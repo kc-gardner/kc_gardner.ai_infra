@@ -1,0 +1,25 @@
+# Pulled here rather than when the service starts, so a slow or failed
+# download is not hidden behind a systemd start timeout. Each user has their
+# own image store, so root having the image does not count.
+- name: Check whether the image is present
+  ansible.builtin.command:
+    argv: [podman, image, exists, "{{ gpustack_image }}"]
+    chdir: "{{ gpustack_home }}"
+  become: true
+  become_user: "{{ gpustack_user }}"
+  environment: "{{ gpustack_user_env }}"
+  register: gpustack_image_present
+  changed_when: false
+  failed_when: gpustack_image_present.rc not in [0, 1]
+
+- name: Pull the image
+  ansible.builtin.command:
+    argv: [podman, pull, --quiet, "{{ gpustack_image }}"]
+    chdir: "{{ gpustack_home }}"
+  become: true
+  become_user: "{{ gpustack_user }}"
+  environment: "{{ gpustack_user_env }}"
+  when: gpustack_image_present.rc == 1
+  changed_when: true
+  async: 1800
+  poll: 10

@@ -1,0 +1,8 @@
+# gpustack_home and gpustack_uid are set in tasks/user.yaml from the created user.
+gpustack_quadlet_dir: "{{ gpustack_home }}/.config/containers/systemd"
+gpustack_config_dir: "{{ gpustack_home }}/.config/gpustack"
+gpustack_env_file: "{{ gpustack_config_dir }}/gpustack.env"
+
+# systemctl --user and podman find the user's systemd through this.
+gpustack_user_env:
+  XDG_RUNTIME_DIR: "/run/user/{{ gpustack_uid }}"

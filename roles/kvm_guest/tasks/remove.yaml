@@ -1,0 +1,18 @@
+- name: Stop VM {{ kvm_guest.name }}
+  community.libvirt.virt:
+    name: "{{ kvm_guest.name }}"
+    state: destroyed
+  when: kvm_guest.name in kvm_guest_existing_vms
+
+- name: Undefine VM {{ kvm_guest.name }}
+  ansible.builtin.command: virsh -c qemu:///system undefine --nvram {{ kvm_guest.name | quote }}
+  changed_when: true
+  when: kvm_guest.name in kvm_guest_existing_vms
+
+- name: Delete disk and cloud-init files for {{ kvm_guest.name }}
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ kvm_guest_image_dir }}/{{ kvm_guest.name }}.qcow2"
+    - "{{ kvm_guest_cloud_init_dir }}/{{ kvm_guest.name }}"

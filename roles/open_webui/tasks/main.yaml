@@ -1,0 +1,18 @@
+- name: Preflight checks
+  ansible.builtin.import_tasks: preflight.yaml
+
+- name: Write the configuration
+  ansible.builtin.import_tasks: config.yaml
+
+# Only when the configuration changed, i.e. the container is about to be recreated.
+# Skipped in check mode, where it would pull the image to run sqlite3.
+- name: Back up the database
+  ansible.builtin.import_tasks: backup.yaml
+  when:
+    - not ansible_check_mode
+    - open_webui_backup | bool
+    - open_webui_config_changed | bool
+    - open_webui_volume_exists | bool
+
+- name: Start Open WebUI
+  ansible.builtin.import_tasks: deploy.yaml

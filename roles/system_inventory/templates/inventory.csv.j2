@@ -1,0 +1,21 @@
+{#- One row per host. Every field is quoted, embedded quotes doubled. -#}
+{%- macro row(fields) -%}
+{%- for v in fields -%}
+"{{ (v if v is not none else '') | string | replace('"', '""') }}"{{ ',' if not loop.last }}
+{%- endfor -%}
+{%- endmacro -%}
+{{ row(['hostname', 'fqdn', 'ip', 'os', 'kernel', 'arch', 'virt_role', 'virt_type',
+        'vendor', 'product', 'serial', 'cpu_model', 'sockets', 'vcpus', 'memory_gb',
+        'root_used_pct', 'uptime_days', 'selinux', 'firewalld', 'failed_units',
+        'packages', 'updates_pending', 'reboot_required', 'collected_at']) }}
+{% for h in __system_inventory_all %}
+{% set root = h.filesystems | selectattr('mount', 'equalto', '/') | first | default({}) %}
+{{ row([h.hostname, h.fqdn, h.network.default_ipv4,
+        h.os.distribution ~ ' ' ~ h.os.version, h.os.kernel, h.os.arch,
+        h.hardware.virtualization_role, h.hardware.virtualization_type,
+        h.hardware.vendor, h.hardware.product, h.hardware.serial,
+        h.cpu.model, h.cpu.sockets, h.cpu.vcpus, (h.memory_mb / 1024) | round(1),
+        root.used_pct | default(''), h.uptime_days, h.selinux, h.firewalld,
+        h.failed_units | join(' '), h.packages_installed, h.updates_pending,
+        h.reboot_required, h.collected_at]) }}
+{% endfor %}

@@ -1,0 +1,25 @@
+{# cloud-init network config (version 2) for VMs with a static ip.
+   The NIC is matched by the MAC virt-install gives it, so this works whatever
+   the guest names the interface (enp1s0, eth0, ...). #}
+{% set dns = kvm_guest.dns | default(kvm_guest_dns_servers) %}
+{% set search = kvm_guest.dns_search | default(kvm_guest_dns_search) %}
+version: 2
+ethernets:
+  primary:
+    match:
+      macaddress: "{{ kvm_guest.mac }}"
+    dhcp4: false
+    addresses:
+      - {{ kvm_guest.ip }}
+    routes:
+      - to: 0.0.0.0/0
+        via: {{ kvm_guest.gateway | default(kvm_guest_gateway) }}
+{% if dns or search %}
+    nameservers:
+{% if dns %}
+      addresses: {{ dns | to_json }}
+{% endif %}
+{% if search %}
+      search: {{ search | to_json }}
+{% endif %}
+{% endif %}

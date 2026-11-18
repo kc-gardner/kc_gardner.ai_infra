@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+[Unit]
+Description=NetBox request queue worker
+Requires=netbox.service
+After=netbox.service
+
+[Container]
+ContainerName=netbox-worker
+Image={{ netbox_image }}
+Network=netbox.network
+EnvironmentFile={{ netbox_config_dir }}/netbox.env
+Exec=/opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py rqworker
+Volume={{ netbox_config_dir }}/zz_role.py:/etc/netbox/config/zz_role.py:ro,z
+Volume=netbox-media.volume:/opt/netbox/netbox/media
+Volume=netbox-reports.volume:/opt/netbox/netbox/reports
+Volume=netbox-scripts.volume:/opt/netbox/netbox/scripts
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

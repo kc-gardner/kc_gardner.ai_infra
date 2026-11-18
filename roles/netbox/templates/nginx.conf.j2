@@ -1,0 +1,25 @@
+# {{ ansible_managed }}
+server {
+    listen 443 ssl;
+    http2 on;
+
+    server_name {{ netbox_server_names_clean | join(' ') }};
+
+    ssl_certificate /etc/nginx/tls/netbox.crt;
+    ssl_certificate_key /etc/nginx/tls/netbox.key;
+
+    client_max_body_size {{ netbox_client_max_body_size }};
+
+    location / {
+        proxy_pass http://netbox:8080;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 80 default_server;
+    return 301 https://$host{{ '' if netbox_https_port | int == 443 else ':' ~ netbox_https_port }}$request_uri;
+}

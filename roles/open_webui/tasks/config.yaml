@@ -1,0 +1,31 @@
+- name: Create the compose folder
+  ansible.builtin.file:
+    path: "{{ open_webui_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  register: open_webui_compose_folder
+
+# Holds the secret key, so only root can read it.
+- name: Write the environment file
+  ansible.builtin.template:
+    src: open-webui.env.j2
+    dest: "{{ open_webui_compose_dir }}/open-webui.env"
+    owner: root
+    group: root
+    mode: "0600"
+  register: open_webui_env_file
+
+- name: Write the compose file
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ open_webui_compose_dir }}/compose.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: open_webui_compose_file
+
+- name: Record whether the configuration changed
+  ansible.builtin.set_fact:
+    open_webui_config_changed: "{{ open_webui_env_file is changed or open_webui_compose_file is changed }}"

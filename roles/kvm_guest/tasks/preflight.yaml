@@ -1,0 +1,120 @@
+- name: Merge OS catalog overrides
+  ansible.builtin.set_fact:
+    kvm_guest_catalog: "{{ kvm_guest_os_catalog | combine(kvm_guest_os_catalog_overrides, recursive=True) }}"
+    kvm_guest_list: []
+    kvm_guest_base_images: {}
+
+# The derived MAC is seeded with the KVM host and VM names, so it is the same
+# on every run and every rebuild, and differs between KVM hosts on one LAN.
+- name: Apply defaults to each VM
+  ansible.builtin.set_fact:
+    kvm_guest_list: >-
+      {{ kvm_guest_list + [kvm_guest_defaults
+         | combine(item)
+         | combine({'mac': (item.mac | default('') | lower) or
+                           '52:54:00' | community.general.random_mac(seed=inventory_hostname ~ '/' ~ item.name | default(''))})] }}
+  loop: "{{ kvm_guests }}"
+  loop_control:
+    label: "{{ item.name | default('(no name)') }}"
+
+- name: Check VM definitions
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name is match('^[A-Za-z0-9][A-Za-z0-9-]*$')
+      - item.os is defined
+      - item.os in kvm_guest_catalog
+      - item.state in ['present', 'absent']
+    fail_msg: >-
+      Each VM needs a name (letters, digits and hyphens), an os from
+      {{ kvm_guest_catalog.keys() | list }}, and state present or absent. Got: {{ item }}
+    quiet: true
+  loop: "{{ kvm_guest_list }}"
+  loop_control:
+    label: "{{ item.name | default('(no name)') }}"
+
+- name: Check VM names are unique
+  ansible.builtin.assert:
+    that:
+      - kvm_guest_list | map(attribute='name') | unique | length == kvm_guest_list | length
+    fail_msg: kvm_guests contains the same name more than once
+    quiet: true
+
+- name: Check network settings
+  ansible.builtin.assert:
+    that:
+      - item.mac is match('^([0-9a-f]{2}:){5}[0-9a-f]{2}$')
+      - item.ip is not defined or item.ip is match('^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$')
+      - item.ip is not defined or (item.gateway | default(kvm_guest_gateway)) | length > 0
+      - (item.dns | default(kvm_guest_dns_servers)) is not string
+      - (item.dns_search | default(kvm_guest_dns_search)) is not string
+    fail_msg: >-
+      {{ item.name }}: mac must look like 52:54:00:12:34:56, ip must be an address
+      with a prefix length (192.0.2.120/24), a static ip needs gateway or
+      kvm_guest_gateway, and dns and dns_search must be lists.
+    quiet: true
+  loop: "{{ kvm_guest_list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Check MAC and IP addresses are unique
+  ansible.builtin.assert:
+    that:
+      - kvm_guest_macs | unique | length == kvm_guest_macs | length
+      - kvm_guest_ips | unique | length == kvm_guest_ips | length
+    fail_msg: Two VMs in kvm_guests have the same mac or ip
+    quiet: true
+  vars:
+    kvm_guest_macs: "{{ kvm_guest_list | map(attribute='mac') | list }}"
+    kvm_guest_ips: "{{ kvm_guest_list | selectattr('ip', 'defined') | map(attribute='ip') | map('split', '/') | map('first') | list }}"
+
+- name: List OSes in use
+  ansible.builtin.set_fact:
+    kvm_guest_used_os: "{{ kvm_guest_list | selectattr('state', 'eq', 'present') | map(attribute='os') | unique }}"
+
+- name: Check each OS in use has an image source
+  ansible.builtin.assert:
+    that:
+      - (kvm_guest_catalog[item].image_url | default('')) | length > 0 or
+        (kvm_guest_catalog[item].image_src | default('')) | length > 0
+    fail_msg: >-
+      {{ 'Download the RHEL KVM guest image (qcow2) from https://access.redhat.com/downloads
+      and set kvm_guest_' ~ item ~ '_image_src to its path on this machine.' if item in ['rhel', 'rhel9']
+      else 'Set image_url or image_src for ' ~ item ~ ' in kvm_guest_os_catalog_overrides.' }}
+    quiet: true
+  loop: "{{ kvm_guest_used_os }}"
+
+- name: Check SSH keys are set
+  ansible.builtin.assert:
+    that:
+      - kvm_guest_ssh_authorized_keys | length > 0
+    fail_msg: Set kvm_guest_ssh_authorized_keys. The VMs have no password login.
+    quiet: true
+  when: kvm_guest_used_os | length > 0
+
+- name: Map each OS to its base image path
+  ansible.builtin.set_fact:
+    kvm_guest_base_images: >-
+      {{ kvm_guest_base_images | combine({item: kvm_guest_image_dir ~ '/' ~
+         ((kvm_guest_catalog[item].image_url | default('', true)) or kvm_guest_catalog[item].image_src) | basename}) }}
+  loop: "{{ kvm_guest_used_os }}"
+
+- name: List OS variants known to the host
+  ansible.builtin.command: virt-install --osinfo list
+  register: kvm_guest_osinfo
+  changed_when: false
+  check_mode: false
+
+# Lines look like "ubuntu24.04, ubuntunoble"; every name on a line is valid.
+- name: Parse OS variants
+  ansible.builtin.set_fact:
+    kvm_guest_osinfo_ids: "{{ kvm_guest_osinfo.stdout_lines | map('split', ',') | flatten | map('trim') | list }}"
+
+- name: List existing VMs
+  community.libvirt.virt:
+    command: list_vms
+  register: kvm_guest_vms
+
+- name: Record existing VMs
+  ansible.builtin.set_fact:
+    kvm_guest_existing_vms: "{{ kvm_guest_vms.list_vms }}"

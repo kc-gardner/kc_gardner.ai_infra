@@ -1,0 +1,71 @@
+- name: List NetworkManager connections
+  ansible.builtin.command: nmcli -g NAME connection show
+  register: kvm_host_nm_connections
+  changed_when: false
+  check_mode: false
+
+- name: Install bridge creation script
+  ansible.builtin.copy:
+    src: create_bridge.sh
+    dest: /usr/local/sbin/kvm-host-create-bridge
+    owner: root
+    group: root
+    mode: "0750"
+
+# Runs detached so it survives the SSH session dropping while the NIC moves
+# onto the bridge. The script rolls back if the bridge gets no IPv4 address.
+- name: Move {{ kvm_host_bridge_interface }} onto bridge {{ kvm_host_bridge_name }}
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/kvm-host-create-bridge
+      - "{{ kvm_host_bridge_name }}"
+      - "{{ kvm_host_bridge_interface }}"
+      - "{{ ansible_facts[kvm_host_bridge_interface].macaddress }}"
+  async: 300
+  poll: 0
+  register: kvm_host_bridge_job
+  when: kvm_host_bridge_name not in kvm_host_nm_connections.stdout_lines
+
+- name: Wait for the host to come back
+  ansible.builtin.wait_for_connection:
+    delay: 15
+    timeout: 300
+  when: kvm_host_bridge_job is changed
+
+- name: Check bridge job result
+  ansible.builtin.async_status:
+    jid: "{{ kvm_host_bridge_job.ansible_job_id }}"
+  register: kvm_host_bridge_result
+  until: kvm_host_bridge_result.finished
+  retries: 30
+  delay: 5
+  when: kvm_host_bridge_job is changed
+
+- name: Fail if the bridge could not be created
+  ansible.builtin.fail:
+    msg: "Bridge creation rolled back: {{ kvm_host_bridge_result.stderr | default('') }}"
+  when:
+    - kvm_host_bridge_job is changed
+    - kvm_host_bridge_result.rc | default(0) != 0
+
+- name: List libvirt networks
+  community.libvirt.virt_net:
+    command: list_nets
+  register: kvm_host_existing_nets
+
+- name: Define libvirt bridge network
+  community.libvirt.virt_net:
+    command: define
+    name: "{{ kvm_host_bridge_libvirt_network }}"
+    xml: "{{ lookup('ansible.builtin.template', 'bridge_network.xml.j2') }}"
+  when: kvm_host_bridge_libvirt_network not in kvm_host_existing_nets.list_nets
+
+- name: Start libvirt bridge network
+  community.libvirt.virt_net:
+    name: "{{ kvm_host_bridge_libvirt_network }}"
+    state: active
+
+- name: Autostart libvirt bridge network
+  community.libvirt.virt_net:
+    name: "{{ kvm_host_bridge_libvirt_network }}"
+    autostart: true

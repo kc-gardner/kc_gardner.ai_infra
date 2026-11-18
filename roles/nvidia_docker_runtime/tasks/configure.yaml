@@ -1,0 +1,77 @@
+- name: Check for {{ nvidia_docker_runtime_daemon_json }}
+  ansible.builtin.stat:
+    path: "{{ nvidia_docker_runtime_daemon_json }}"
+  register: nvidia_docker_runtime_file
+
+- name: Read {{ nvidia_docker_runtime_daemon_json }}
+  ansible.builtin.slurp:
+    src: "{{ nvidia_docker_runtime_daemon_json }}"
+  register: nvidia_docker_runtime_slurp
+  when: nvidia_docker_runtime_file.stat.exists
+
+# A missing or empty file counts as no settings.
+- name: Parse the current settings
+  ansible.builtin.set_fact:
+    nvidia_docker_runtime_current: >-
+      {{ (nvidia_docker_runtime_slurp.content | b64decode | trim | default('{}', true) | from_json)
+         if nvidia_docker_runtime_file.stat.exists else {} }}
+
+- name: Ensure daemon.json holds a JSON object
+  ansible.builtin.assert:
+    that:
+      - nvidia_docker_runtime_current is mapping
+      - nvidia_docker_runtime_current.runtimes | default({}) is mapping
+    fail_msg: >-
+      {{ nvidia_docker_runtime_daemon_json }} is not a JSON object with a runtimes object.
+      Fix it by hand; the role will not overwrite it.
+    quiet: true
+
+# Adds the runtime and keeps every other key. default-runtime is set when asked
+# for, and dropped when it points at this runtime but no longer should.
+- name: Work out the new settings
+  ansible.builtin.set_fact:
+    nvidia_docker_runtime_desired: >-
+      {{ nvidia_docker_runtime_current
+         | combine({'runtimes': {nvidia_docker_runtime_name:
+                     {'path': nvidia_docker_runtime_path, 'args': []}}}, recursive=true)
+         | dict2items | rejectattr('key', 'in', nvidia_docker_runtime_drop) | items2dict
+         | combine({'default-runtime': nvidia_docker_runtime_name} if nvidia_docker_runtime_default | bool else {}) }}
+  vars:
+    nvidia_docker_runtime_drop: >-
+      {{ ['default-runtime'] if nvidia_docker_runtime_current['default-runtime'] | default('') == nvidia_docker_runtime_name
+                                 and not nvidia_docker_runtime_default | bool else [] }}
+  when: nvidia_docker_runtime_state == 'present'
+
+# Drops the runtime, default-runtime if it points at it, and runtimes if nothing is left in it.
+- name: Work out the settings without the runtime
+  ansible.builtin.set_fact:
+    nvidia_docker_runtime_desired: >-
+      {{ nvidia_docker_runtime_current
+         | dict2items | rejectattr('key', 'in', ['runtimes'] + nvidia_docker_runtime_drop) | items2dict
+         | combine({'runtimes': nvidia_docker_runtime_others} if nvidia_docker_runtime_others | length > 0 else {}) }}
+  vars:
+    nvidia_docker_runtime_others: >-
+      {{ nvidia_docker_runtime_current.runtimes | default({})
+         | dict2items | rejectattr('key', 'eq', nvidia_docker_runtime_name) | items2dict }}
+    nvidia_docker_runtime_drop: >-
+      {{ ['default-runtime'] if nvidia_docker_runtime_current['default-runtime'] | default('') == nvidia_docker_runtime_name
+         else [] }}
+  when: nvidia_docker_runtime_state == 'absent'
+
+# Only written when the settings differ, so a file formatted by hand is not
+# rewritten for nothing. The previous version is kept next to it.
+- name: Write {{ nvidia_docker_runtime_daemon_json }}
+  ansible.builtin.copy:
+    dest: "{{ nvidia_docker_runtime_daemon_json }}"
+    content: "{{ nvidia_docker_runtime_desired | to_nice_json(indent=4) }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: "{{ nvidia_docker_runtime_file.stat.exists }}"
+  when:
+    - nvidia_docker_runtime_desired != nvidia_docker_runtime_current
+    - nvidia_docker_runtime_file.stat.exists or nvidia_docker_runtime_desired | length > 0
+  notify: Reload docker
+
+- name: Apply the change now
+  ansible.builtin.meta: flush_handlers

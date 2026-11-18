@@ -1,0 +1,14 @@
+.ansible/
+.DS_Store
+*.retry
+*.tar.gz
+
+# VM disk images
+*.qcow2
+
+# Local secrets (see playbooks/vars/*.example.yaml)
+playbooks/vars/*.yaml
+!playbooks/vars/*.example.yaml
+
+# system_inventory role output
+reports/

@@ -1,0 +1,11 @@
+- name: Deploy a NetBox server
+  hosts: netbox
+  become: true
+  gather_facts: true
+
+  # The first file found is loaded: the real, git-ignored one if present.
+  vars_files:
+    - [vars/netbox.yaml, vars/netbox.example.yaml]
+
+  roles:
+    - kc_gardner.ai_infra.netbox

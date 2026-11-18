@@ -1,0 +1,21 @@
+- name: Preflight checks
+  ansible.builtin.import_tasks: preflight.yaml
+
+- name: Download models
+  ansible.builtin.include_tasks: download.yaml
+  loop: "{{ hf_models_list | selectattr('state', 'eq', 'present') }}"
+  loop_control:
+    loop_var: hf_model
+    label: "{{ hf_model.repo }}"
+
+- name: Remove models
+  ansible.builtin.file:
+    path: "{{ hf_models_dir }}/{{ item.name }}"
+    state: absent
+  loop: "{{ hf_models_list | selectattr('state', 'eq', 'absent') }}"
+  loop_control:
+    label: "{{ item.repo }}"
+
+- name: Report models
+  ansible.builtin.debug:
+    msg: "{{ hf_models_report | default(['No models to download.']) }}"

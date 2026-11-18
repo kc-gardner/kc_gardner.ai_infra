@@ -1,0 +1,124 @@
+- name: Start with an empty instance list
+  ansible.builtin.set_fact:
+    vllm_server_list: []
+
+- name: Apply defaults to each instance
+  ansible.builtin.set_fact:
+    vllm_server_list: "{{ vllm_server_list + [vllm_server_defaults | combine({'served_name': item.name | default('')}, item)] }}"
+  loop: "{{ vllm_server_instances }}"
+  loop_control:
+    label: "{{ item.name | default('(no name)') }}"
+
+# The name is also the Compose project and container name, which only allow these characters.
+- name: Check instance definitions
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name is match('^[a-z0-9][a-z0-9_-]*$')
+      - item.state in ['present', 'absent']
+      - item.state == 'absent' or (
+          item.model is defined and item.model | length > 0 and
+          item.port is defined and item.port | int > 0 and item.port | int < 65536 and
+          item.gpu_memory_utilization | float > 0 and item.gpu_memory_utilization | float < 1 and
+          item.max_model_len | int > 0 and item.max_num_seqs | int > 0 and
+          item.served_name | length > 0 and
+          item.extra_args is sequence and item.extra_args is not string and
+          item.env is mapping)
+    fail_msg: >-
+      Each instance needs a name (lowercase letters, digits, - and _) and state present or absent.
+      A present instance also needs a model folder, a port, gpu_memory_utilization between 0 and 1,
+      positive max_model_len and max_num_seqs, extra_args as a list and env as a mapping. Got: {{ item }}
+    quiet: true
+  loop: "{{ vllm_server_list }}"
+  loop_control:
+    label: "{{ item.name | default('(no name)') }}"
+
+- name: Check instance names and ports are unique
+  ansible.builtin.assert:
+    that:
+      - vllm_server_list | map(attribute='name') | unique | length == vllm_server_list | length
+      - vllm_server_present | map(attribute='port') | map('int') | unique | length == vllm_server_present | length
+    fail_msg: vllm_server_instances has the same name, or two present instances on the same port.
+    quiet: true
+  vars:
+    vllm_server_present: "{{ vllm_server_list | selectattr('state', 'eq', 'present') }}"
+
+- name: Check the instances fit in GPU memory together
+  ansible.builtin.assert:
+    that:
+      - vllm_server_total | float <= vllm_server_gpu_memory_limit | float
+    fail_msg: >-
+      The present instances' gpu_memory_utilization adds up to {{ vllm_server_total }},
+      over vllm_server_gpu_memory_limit ({{ vllm_server_gpu_memory_limit }}).
+      Lower some instances' share, or raise the limit if the host can spare the memory.
+    quiet: true
+  vars:
+    vllm_server_total: >-
+      {{ vllm_server_list | selectattr('state', 'eq', 'present')
+         | map(attribute='gpu_memory_utilization') | map('float') | sum | round(3) }}
+
+- name: Check Docker Compose is available
+  ansible.builtin.command: docker compose version --short
+  changed_when: false
+  check_mode: false
+
+- name: Check the NVIDIA Container Toolkit is installed
+  ansible.builtin.command: nvidia-ctk --version
+  changed_when: false
+  check_mode: false
+
+- name: Check each model folder has a config
+  ansible.builtin.stat:
+    path: "{{ vllm_server_models_dir }}/{{ item.model }}/config.json"
+  register: vllm_server_model_configs
+  loop: "{{ vllm_server_list | selectattr('state', 'eq', 'present') }}"
+  loop_control:
+    label: "{{ item.name }}: {{ item.model }}"
+
+- name: Ensure each model is downloaded
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: >-
+      {{ vllm_server_models_dir }}/{{ item.item.model }}/config.json does not exist.
+      Download the model first, e.g. with the hf_models role.
+    quiet: true
+  loop: "{{ vllm_server_model_configs.results }}"
+  loop_control:
+    label: "{{ item.item.name }}: {{ item.item.model }}"
+
+# docker inspect prints the Compose project label, or nothing for a container
+# started any other way.
+- name: Look for containers with the instances' names
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - '{{ "{{" }}index .Config.Labels "com.docker.compose.project"{{ "}}" }}'
+      - "{{ item.name }}"
+  register: vllm_server_existing
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  loop: "{{ vllm_server_list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# Instances are deployed as a Compose project named after the instance.
+- name: List containers this role did not create
+  ansible.builtin.set_fact:
+    vllm_server_unmanaged: >-
+      {{ vllm_server_existing.results | selectattr('rc', 'eq', 0)
+         | rejectattr('stdout', 'in', vllm_server_list | map(attribute='name'))
+         | map(attribute='item.name') | list }}
+
+- name: Ensure no other container uses an instance's name
+  ansible.builtin.assert:
+    that:
+      - vllm_server_unmanaged | length == 0 or vllm_server_replace_unmanaged | bool
+    fail_msg: >-
+      These containers were not created by vllm_server: {{ vllm_server_unmanaged | join(', ') }}.
+      Remove them (docker rm -f NAME), or set vllm_server_replace_unmanaged: true
+      to have the role remove them and deploy its own.
+    quiet: true

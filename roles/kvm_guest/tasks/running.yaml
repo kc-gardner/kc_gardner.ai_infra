@@ -1,0 +1,64 @@
+# New VMs power themselves off when cloud-init finishes (see user-data.j2).
+# They all boot at once, so the wait is about as long as the slowest one.
+- name: Wait for new VMs to finish their first boot
+  ansible.builtin.command: virsh -c qemu:///system domstate {{ item.name | quote }}
+  register: kvm_guest_first_boot
+  until: kvm_guest_first_boot.stdout | trim == 'shut off'
+  retries: "{{ (kvm_guest_first_boot_timeout | int / 10) | round(0, 'ceil') | int }}"
+  delay: 10
+  changed_when: false
+  loop: "{{ kvm_guest_list | selectattr('state', 'eq', 'present') | rejectattr('name', 'in', kvm_guest_existing_vms) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: not ansible_check_mode
+
+- name: Start VMs
+  community.libvirt.virt:
+    name: "{{ item.name }}"
+    state: running
+  loop: "{{ kvm_guest_list | selectattr('state', 'eq', 'present') }}"
+  loop_control:
+    label: "{{ item.name }}"
+  # In check mode new VMs are not really created.
+  when: not ansible_check_mode or item.name in kvm_guest_existing_vms
+
+- name: Set VM autostart
+  community.libvirt.virt:
+    name: "{{ item.name }}"
+    autostart: "{{ item.autostart | bool }}"
+  loop: "{{ kvm_guest_list | selectattr('state', 'eq', 'present') }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: not ansible_check_mode or item.name in kvm_guest_existing_vms
+
+# Asks qemu-guest-agent, so it works on both the NAT and bridged networks.
+# New VMs need a minute or two while cloud-init installs and starts the agent.
+- name: Wait for VM IP addresses
+  ansible.builtin.command: virsh -c qemu:///system domifaddr {{ item.name | quote }} --source agent
+  register: kvm_guest_ifaddr
+  until: >-
+    kvm_guest_ifaddr.rc == 0 and
+    kvm_guest_ifaddr.stdout | regex_findall('ipv4\s+([0-9.]+)/') | reject('match', '^127\.') | list | length > 0
+  retries: "{{ (kvm_guest_wait_for_ip_timeout | int / 10) | round(0, 'ceil') | int }}"
+  delay: 10
+  changed_when: false
+  ignore_errors: true
+  loop: "{{ kvm_guest_list | selectattr('state', 'eq', 'present') }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - kvm_guest_wait_for_ip | bool
+    - not ansible_check_mode or item.name in kvm_guest_existing_vms
+
+- name: Show VM addresses
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.item.name }} ({{ item.item.os }}, network {{ item.item.network }}):
+      {{ item.stdout | default('') | regex_findall('ipv4\s+([0-9.]+)/') | reject('match', '^127\.') | join(', ')
+         or 'no IP reported yet' }}
+      {%- set macs = item.stdout | default('') | regex_findall('([0-9a-f]{2}(?::[0-9a-f]{2}){5})\s+ipv4\s+(?!127\.)[0-9]') | unique %}
+      {{- (', MAC ' ~ macs | join(', ')) if macs else '' }}
+  loop: "{{ kvm_guest_ifaddr.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item is not skipped

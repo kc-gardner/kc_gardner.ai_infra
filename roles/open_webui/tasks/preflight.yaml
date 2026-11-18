@@ -1,0 +1,80 @@
+- name: Check the settings
+  ansible.builtin.assert:
+    that:
+      - open_webui_name is match('^[a-z0-9][a-z0-9_-]*$')
+      - open_webui_port | int > 0 and open_webui_port | int < 65536
+      - open_webui_volume | length > 0
+      - open_webui_env is mapping
+      - open_webui_backup_keep | int > 0
+    fail_msg: >-
+      open_webui_name must be lowercase letters, digits, - and _, open_webui_port a port number,
+      open_webui_volume set, open_webui_env a dictionary and open_webui_backup_keep at least 1.
+    quiet: true
+
+- name: Check the secret key is set
+  ansible.builtin.assert:
+    that:
+      - open_webui_secret_key | length >= 32
+    fail_msg: >-
+      Set open_webui_secret_key to at least 32 characters, kept in Ansible Vault.
+      `openssl rand -hex 32` makes one.
+    quiet: true
+
+- name: Check the connections
+  ansible.builtin.assert:
+    that:
+      - item.url is defined
+      - item.url is match('^https?://')
+    fail_msg: "Each open_webui_openai_connections entry needs a url starting with http:// or https://. Got: {{ item }}"
+    quiet: true
+  loop: "{{ open_webui_openai_connections }}"
+  loop_control:
+    label: "{{ item.url | default('(no url)') }}"
+
+- name: Check Docker Compose is available
+  ansible.builtin.command: docker compose version --short
+  changed_when: false
+  check_mode: false
+
+- name: Check whether the data volume exists
+  ansible.builtin.command: docker volume inspect {{ open_webui_volume | quote }}
+  register: open_webui_volume_inspect
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Record whether the data volume exists
+  ansible.builtin.set_fact:
+    open_webui_volume_exists: "{{ open_webui_volume_inspect.rc == 0 }}"
+
+# Prints "name<TAB>compose project" for every container, running or not, that mounts the volume.
+- name: List containers using the data volume
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - --all
+      - --filter
+      - volume={{ open_webui_volume }}
+      - --format
+      - '{{ "{{" }}.Names{{ "}}" }}	{{ "{{" }}.Label "com.docker.compose.project"{{ "}}" }}'
+  register: open_webui_volume_users
+  changed_when: false
+  check_mode: false
+
+- name: List containers this role did not create
+  ansible.builtin.set_fact:
+    open_webui_unmanaged: >-
+      {{ open_webui_volume_users.stdout_lines
+         | reject('match', '^[^\t]+\t' ~ open_webui_name ~ '$')
+         | map('regex_replace', '\t.*$', '') | list }}
+
+- name: Ensure no other container uses the data volume
+  ansible.builtin.assert:
+    that:
+      - open_webui_unmanaged | length == 0 or open_webui_replace_unmanaged | bool
+    fail_msg: >-
+      These containers use the {{ open_webui_volume }} volume but were not created by open_webui:
+      {{ open_webui_unmanaged | join(', ') }}. Remove them (docker rm -f NAME), or set
+      open_webui_replace_unmanaged: true to have the role remove them. The data stays in the volume.
+    quiet: true

@@ -1,0 +1,49 @@
+netbox_quadlet_dir: /etc/containers/systemd
+
+netbox_tls_dir: "{{ netbox_config_dir }}/tls"
+netbox_tls_cert: "{{ netbox_tls_dir }}/netbox.crt"
+netbox_tls_key: "{{ netbox_tls_dir }}/netbox.key"
+netbox_tls_selfsigned: "{{ netbox_tls_cert_file | length == 0 }}"
+
+netbox_server_names_clean: "{{ netbox_server_names | select | unique | list }}"
+
+# Subject alternative names for the self-signed certificate: IP: for addresses, DNS: for names.
+netbox_tls_sans: >-
+  {{ netbox_server_names_clean
+     | map('regex_replace', '^(?=[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$)', 'IP:')
+     | map('regex_replace', '^(?!IP:)', 'DNS:')
+     | list }}
+
+# https://name, with the port when it is not 443.
+netbox_origins: >-
+  {{ netbox_server_names_clean
+     | map('regex_replace', '^', 'https://')
+     | map('regex_replace', '$', '' if netbox_https_port | int == 443 else ':' ~ netbox_https_port)
+     | list }}
+
+netbox_quadlets:
+  - netbox.network
+  - netbox-postgres.volume
+  - netbox-valkey.volume
+  - netbox-media.volume
+  - netbox-reports.volume
+  - netbox-scripts.volume
+  - netbox-postgres.container
+  - netbox-valkey.container
+  - netbox.container
+  - netbox-worker.container
+  - netbox-nginx.container
+
+# systemd services Quadlet generates from the .container files, in start order.
+netbox_services:
+  - netbox-postgres
+  - netbox-valkey
+  - netbox
+  - netbox-worker
+  - netbox-nginx
+
+netbox_images:
+  - "{{ netbox_image }}"
+  - "{{ netbox_postgres_image }}"
+  - "{{ netbox_valkey_image }}"
+  - "{{ netbox_nginx_image }}"
